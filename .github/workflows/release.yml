@@ -1,0 +1,257 @@
+name: Release
+
+# Two entry points:
+#
+#   1. workflow_dispatch — cuts a release: bumps every workspace version,
+#      regenerates the changelog, commits, tags and pushes the tag.
+#   2. push of a v* tag  — publishes the GitHub Release, which in turn triggers
+#      the package, image and deployment workflows.
+#
+# Splitting them means a tag pushed by hand still produces a correct release,
+# and the version bump stays reviewable in git history.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Semantic version bump
+        required: true
+        default: patch
+        type: choice
+        options: [patch, minor, major, prerelease]
+      prerelease-id:
+        description: Pre-release identifier (used only when bump = prerelease)
+        required: false
+        default: rc
+        type: string
+      dry-run:
+        description: Compute the version and changelog without pushing
+        required: false
+        default: false
+        type: boolean
+  push:
+    tags: ["v*.*.*"]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  prepare:
+    name: Prepare release
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # A PAT would be needed for the tag push to re-trigger this workflow's
+          # `push` half; with GITHUB_TOKEN the release job below is invoked
+          # directly instead. See the `publish` job's `needs`.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: ./.github/actions/setup
+
+      - name: Verify the workspace is releasable
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+          JWT_ACCESS_SECRET: ci-placeholder-access-secret-not-a-real-secret
+          JWT_REFRESH_SECRET: ci-placeholder-refresh-secret-not-a-real-secret
+        run: |
+          pnpm db:generate
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm build
+
+      - name: Compute the next version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+          PRERELEASE_ID: ${{ inputs.prerelease-id }}
+        run: |
+          current=$(jq -r .version package.json)
+          IFS='.' read -r major minor patch <<< "${current%%-*}"
+
+          case "$BUMP" in
+            major)      next="$((major + 1)).0.0" ;;
+            minor)      next="${major}.$((minor + 1)).0" ;;
+            patch)      next="${major}.${minor}.$((patch + 1))" ;;
+            prerelease) next="${major}.${minor}.$((patch + 1))-${PRERELEASE_ID}.0" ;;
+          esac
+
+          {
+            echo "version=$next"
+            echo "tag=v$next"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### Release \`v$next\`"
+            echo ""
+            echo "Bumping from \`$current\` (\`${BUMP}\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail if the tag already exists
+        run: |
+          if git rev-parse "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+            echo "::error::Tag ${{ steps.version.outputs.tag }} already exists."
+            exit 1
+          fi
+
+      - name: Apply the version across the workspace
+        run: |
+          # Every workspace member ships as one unit, so they share a version.
+          # Divergent versions across services make "which build is in prod?"
+          # unanswerable during an incident.
+          pnpm version "${{ steps.version.outputs.version }}" \
+            --no-git-tag-version --allow-same-version
+          pnpm --recursive exec -- npm version "${{ steps.version.outputs.version }}" \
+            --no-git-tag-version --allow-same-version
+
+      - name: Generate the changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --tag ${{ steps.version.outputs.tag }} --output CHANGELOG.md
+        env:
+          OUTPUT: CHANGELOG.md
+
+      - name: Commit, tag and push
+        if: inputs.dry-run != true
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore(release): $TAG [skip ci]"
+          git tag -a "$TAG" -m "StaySphere $TAG"
+          git push origin HEAD:${{ github.ref_name }}
+          git push origin "$TAG"
+
+      - name: Dry run notice
+        if: inputs.dry-run == true
+        run: |
+          echo "### 🧪 Dry run — nothing was pushed" >> "$GITHUB_STEP_SUMMARY"
+          git --no-pager diff --stat >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish GitHub Release
+    # Runs for a pushed tag, and directly after a dispatch-driven prepare (the
+    # tag push made with GITHUB_TOKEN cannot re-trigger this workflow).
+    if: always() && (github.event_name == 'push' || needs.prepare.result == 'success')
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'push' && github.ref || needs.prepare.outputs.tag }}
+
+      - name: Resolve the release version
+        id: meta
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+          else
+            tag="${{ needs.prepare.outputs.tag }}"
+          fi
+          version="${tag#v}"
+          prerelease=$([[ "$version" == *-* ]] && echo true || echo false)
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/setup
+
+      - name: Build release artefacts
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+          JWT_ACCESS_SECRET: ci-placeholder-access-secret-not-a-real-secret
+          JWT_REFRESH_SECRET: ci-placeholder-refresh-secret-not-a-real-secret
+        run: |
+          pnpm db:generate
+          pnpm build
+
+      - name: Package the deployable bundles
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          mkdir -p release-artifacts
+          for dir in services/*/; do
+            name=$(basename "$dir")
+            [[ -d "$dir/dist" ]] || continue
+            members=(dist package.json)
+            [[ -d "$dir/prisma" ]] && members+=(prisma)
+            tar -czf "release-artifacts/${name}-${VERSION}.tar.gz" -C "$dir" "${members[@]}"
+          done
+          # A checksum file lets anyone verify a download against the release page.
+          (cd release-artifacts && sha256sum ./*.tar.gz > SHA256SUMS.txt)
+          ls -la release-artifacts
+
+      - name: Create the GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: StaySphere ${{ steps.meta.outputs.tag }}
+          # Notes are assembled from merged PRs using .github/release.yml.
+          generate_release_notes: true
+          prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
+          make_latest: ${{ steps.meta.outputs.prerelease == 'false' }}
+          files: |
+            release-artifacts/*.tar.gz
+            release-artifacts/SHA256SUMS.txt
+          body: |
+            ## StaySphere ${{ steps.meta.outputs.tag }}
+
+            ### Container images
+
+            ```
+            ghcr.io/${{ github.repository_owner }}/staysphere-api-gateway:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/staysphere-auth-service:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/staysphere-booking-service:${{ steps.meta.outputs.version }}
+            ```
+
+            Verify a downloaded bundle with `sha256sum -c SHA256SUMS.txt`.
+
+            ---
+
+  # ---------------------------------------------------------------------------
+  summary:
+    name: Release summary
+    needs: [publish]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULT: ${{ needs.publish.result }}
+        run: |
+          if [[ "$RESULT" == "success" ]]; then
+            {
+              echo "### ✅ Release published"
+              echo ""
+              echo "The package, image and deployment workflows are triggered by the published release."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### ❌ Release failed (\`$RESULT\`)" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
