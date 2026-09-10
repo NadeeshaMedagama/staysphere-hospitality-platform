@@ -1,0 +1,386 @@
+name: Deploy Production
+
+# Promotes a release to production.
+#
+#   preflight → migrate → ┬─ deploy-frontends (Vercel)
+#                         └─ deploy-services  (containers)
+#                              → smoke-test → notify
+#
+# Migrations run before anything is deployed and must be backward compatible:
+# for a short window the previous revision is still serving traffic against the
+# new schema. Expand now, contract in a later release.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag or SHA to deploy"
+        required: true
+        type: string
+      skip-migrations:
+        description: Skip database migrations
+        required: false
+        default: false
+        type: boolean
+      components:
+        description: What to deploy
+        required: false
+        default: all
+        type: choice
+        options: [all, frontends, services]
+
+# Never let two production deployments overlap, and never cancel one midway —
+# a half-applied rollout is worse than a queued one.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_ENV: production
+  TURBO_TELEMETRY_DISABLED: 1
+  NEXT_TELEMETRY_DISABLED: 1
+
+jobs:
+  # ---------------------------------------------------------------------------
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      ref: ${{ steps.resolve.outputs.ref }}
+      version: ${{ steps.resolve.outputs.version }}
+      vercel: ${{ steps.credentials.outputs.vercel }}
+      neon: ${{ steps.credentials.outputs.neon }}
+      deploy-frontends: ${{ steps.resolve.outputs.frontends }}
+      deploy-services: ${{ steps.resolve.outputs.services }}
+      services: ${{ steps.resolve.outputs.service-list }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.event.release.tag_name }}
+
+      - name: Resolve the deployment target
+        id: resolve
+        run: |
+          ref="${{ inputs.ref || github.event.release.tag_name }}"
+          version="${ref#v}"
+          components="${{ inputs.components || 'all' }}"
+
+          frontends=false; services=false
+          [[ "$components" == "all" || "$components" == "frontends" ]] && frontends=true
+          [[ "$components" == "all" || "$components" == "services"  ]] && services=true
+
+          list=$(find services -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/package.json' \; -printf '%f\n' | sort | jq -R . | jq -sc .)
+
+          {
+            echo "ref=$ref"
+            echo "version=$version"
+            echo "frontends=$frontends"
+            echo "services=$services"
+            echo "service-list=$list"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Detect available credentials
+        id: credentials
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          if [[ -n "$VERCEL_TOKEN" && -n "$VERCEL_ORG_ID" ]]; then
+            echo "vercel=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "vercel=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::VERCEL_TOKEN / VERCEL_ORG_ID are not configured — the frontend deployment will be skipped."
+          fi
+
+          if [[ -n "$NEON_DATABASE_URL" ]]; then
+            echo "neon=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "neon=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::NEON_DATABASE_URL is not configured — migrations will be skipped."
+          fi
+
+      - name: Deployment plan
+        run: |
+          {
+            echo "### 🚢 Production deployment"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Ref | \`${{ steps.resolve.outputs.ref }}\` |"
+            echo "| Version | \`${{ steps.resolve.outputs.version }}\` |"
+            echo "| Frontends | \`${{ steps.resolve.outputs.frontends }}\` |"
+            echo "| Services | \`${{ steps.resolve.outputs.services }}\` |"
+            echo "| Migrations | \`${{ steps.credentials.outputs.neon == 'true' && inputs.skip-migrations != true }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  migrate:
+    name: Apply database migrations
+    needs: preflight
+    if: needs.preflight.outputs.neon == 'true' && inputs.skip-migrations != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # A protected environment: production migrations wait for whoever is named
+    # as a reviewer in Settings → Environments.
+    environment:
+      name: production-database
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+
+      - uses: ./.github/actions/setup
+        with:
+          prisma-generate: "true"
+
+      - name: Show the pending migrations
+        env:
+          # Prisma Migrate cannot run through Neon's PgBouncer pooler; it needs
+          # the direct endpoint for advisory locks and DDL.
+          DATABASE_URL: ${{ secrets.NEON_DIRECT_URL || secrets.NEON_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.NEON_DIRECT_URL || secrets.NEON_DATABASE_URL }}
+        run: |
+          for dir in services/*/; do
+            [[ -f "$dir/prisma/schema.prisma" ]] || continue
+            echo "── $(basename "$dir") ──"
+            pnpm --filter "./$dir" exec prisma migrate status || true
+          done
+
+      - name: Apply
+        env:
+          DATABASE_URL: ${{ secrets.NEON_DIRECT_URL || secrets.NEON_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.NEON_DIRECT_URL || secrets.NEON_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          for dir in services/*/; do
+            [[ -f "$dir/prisma/schema.prisma" ]] || continue
+            name=$(basename "$dir")
+            echo "::group::Migrating $name"
+            # `migrate deploy` only applies committed migrations and never
+            # generates or resets — the only safe verb for production.
+            pnpm --filter "./$dir" exec prisma migrate deploy
+            echo "::endgroup::"
+          done
+
+  # ---------------------------------------------------------------------------
+  deploy-frontends:
+    name: Deploy ${{ matrix.app }} to Vercel
+    needs: [preflight, migrate]
+    if: |
+      always() &&
+      needs.preflight.outputs.deploy-frontends == 'true' &&
+      needs.preflight.outputs.vercel == 'true' &&
+      (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: web
+            project-secret: VERCEL_PROJECT_ID_WEB
+          - app: admin
+            project-secret: VERCEL_PROJECT_ID_ADMIN
+          - app: staff
+            project-secret: VERCEL_PROJECT_ID_STAFF
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+
+      - uses: ./.github/actions/setup
+
+      - name: Install the Vercel CLI
+        run: pnpm add -g vercel@latest
+
+      - name: Pull the production environment
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets[matrix.project-secret] }}
+        working-directory: apps/${{ matrix.app }}
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets[matrix.project-secret] }}
+          NEXT_PUBLIC_APP_VERSION: ${{ needs.preflight.outputs.version }}
+          NEXT_PUBLIC_API_URL: ${{ vars.PRODUCTION_API_URL }}
+        working-directory: apps/${{ matrix.app }}
+        # Building here rather than on Vercel means the artefact that ships is
+        # the one this pipeline verified.
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy
+        id: deploy
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets[matrix.project-secret] }}
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          set -euo pipefail
+          url=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "::notice::${{ matrix.app }} deployed to $url"
+
+      - name: Verify the deployment is serving
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -uo pipefail
+          for attempt in $(seq 1 30); do
+            status=$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 10 "$URL/api/health" || echo 000)
+            if [[ "$status" == "200" ]]; then
+              echo "✓ ${{ matrix.app }} healthy after ${attempt} attempt(s)"
+              cat /tmp/health.json
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::${{ matrix.app }} did not answer /api/health at $URL"
+          exit 1
+
+      - name: Summary
+        run: |
+          {
+            echo "### ▲ ${{ matrix.app }}"
+            echo ""
+            echo "Deployed \`${{ needs.preflight.outputs.version }}\` → ${{ steps.deploy.outputs.url }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  deploy-services:
+    name: Deploy ${{ matrix.service }}
+    needs: [preflight, migrate]
+    if: |
+      always() &&
+      needs.preflight.outputs.deploy-services == 'true' &&
+      (needs.migrate.result == 'success' || needs.migrate.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: production
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        service: ${{ fromJson(needs.preflight.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+
+      # Dogfooding the Marketplace action this repository publishes: if it were
+      # to break, production would notice before any consumer does.
+      - name: Build, publish and roll out
+        id: rollout
+        uses: ./
+        with:
+          service: ${{ matrix.service }}
+          version: ${{ needs.preflight.outputs.version }}
+          image-namespace: ${{ github.repository_owner }}
+          registry: ghcr.io
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}
+          platforms: linux/amd64,linux/arm64
+          push: "true"
+          extra-tags: |
+            production
+            latest
+          deploy-webhook: ${{ secrets.CONTAINER_DEPLOY_WEBHOOK }}
+          health-url: ${{ vars.PRODUCTION_API_URL && format('{0}/health', vars.PRODUCTION_API_URL) || '' }}
+          health-timeout: "240"
+
+      - name: Record the rollout
+        run: |
+          {
+            echo "### 📦 ${{ matrix.service }}"
+            echo ""
+            echo "- Image: \`${{ steps.rollout.outputs.image }}:${{ steps.rollout.outputs.version }}\`"
+            echo "- Digest: \`${{ steps.rollout.outputs.digest }}\`"
+            echo "- Health: \`${{ steps.rollout.outputs.healthy }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  smoke-test:
+    name: Production smoke test
+    needs: [preflight, deploy-frontends, deploy-services]
+    if: always() && (needs.deploy-frontends.result == 'success' || needs.deploy-services.result == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+
+      - name: Probe the public surface
+        env:
+          API_URL: ${{ vars.PRODUCTION_API_URL }}
+          WEB_URL: ${{ vars.PRODUCTION_WEB_URL }}
+        run: |
+          set -uo pipefail
+          failures=0
+
+          probe() {
+            local name="$1" url="$2" expected="${3:-200}"
+            [[ -z "$url" ]] && { echo "– $name: no URL configured, skipped"; return 0; }
+            local status
+            status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$url" || echo 000)
+            if [[ "$status" == "$expected" ]]; then
+              echo "✓ $name → HTTP $status"
+            else
+              echo "✗ $name → HTTP $status (expected $expected)"
+              failures=$((failures + 1))
+            fi
+          }
+
+          probe "gateway liveness"  "${API_URL:+$API_URL/health}"
+          probe "gateway readiness" "${API_URL:+$API_URL/ready}"
+          probe "guest site"        "$WEB_URL"
+
+          if [[ $failures -gt 0 ]]; then
+            echo "::error::$failures production smoke check(s) failed."
+            exit 1
+          fi
+          echo "All smoke checks passed."
+
+  # ---------------------------------------------------------------------------
+  notify:
+    name: Report deployment outcome
+    needs: [preflight, migrate, deploy-frontends, deploy-services, smoke-test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compose the report
+        id: report
+        run: |
+          results='${{ toJSON(needs) }}'
+          failed=$(echo "$results" | jq -r '[to_entries[] | select(.value.result == "failure")] | length')
+          {
+            echo "### Deployment report — \`${{ needs.preflight.outputs.version }}\`"
+            echo ""
+            echo "| Stage | Result |"
+            echo "| --- | --- |"
+            echo "$results" | jq -r 'to_entries[] | "| \(.key) | `\(.value.result)` |"'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+
+      - name: Fail the run if any stage failed
+        if: steps.report.outputs.failed != '0'
+        run: |
+          echo "::error::${{ steps.report.outputs.failed }} deployment stage(s) failed. Roll back with: gh workflow run deploy-production.yml -f ref=<previous-tag>"
+          exit 1
