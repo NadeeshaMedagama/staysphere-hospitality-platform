@@ -1,0 +1,297 @@
+name: Publish Images
+
+# Builds every service image once and pushes it to both registries:
+#
+#   • GHCR       — always. Authenticated with GITHUB_TOKEN, so it needs no
+#                  configuration and works on a fresh fork.
+#   • Docker Hub — when DOCKERHUB_USERNAME and DOCKERHUB_TOKEN are present.
+#                  Absent credentials skip the push instead of failing the run.
+#
+# Images are multi-architecture (amd64 + arm64), carry an SBOM and provenance
+# attestation, and are signed keylessly with cosign.
+
+on:
+  release:
+    types: [published]
+  push:
+    branches: [main]
+    paths:
+      - "services/**"
+      - "packages/**"
+      - "infrastructure/docker/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/publish-dockerhub.yml"
+  workflow_dispatch:
+    inputs:
+      services:
+        description: 'Comma-separated services, or "all"'
+        required: false
+        default: all
+        type: string
+      platforms:
+        description: Target platforms
+        required: false
+        default: linux/amd64,linux/arm64
+        type: string
+
+concurrency:
+  group: publish-images-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  GHCR_REGISTRY: ghcr.io
+  IMAGE_PREFIX: staysphere
+
+jobs:
+  # ---------------------------------------------------------------------------
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      services: ${{ steps.discover.outputs.services }}
+      dockerhub-enabled: ${{ steps.credentials.outputs.dockerhub }}
+      platforms: ${{ steps.discover.outputs.platforms }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Discover services
+        id: discover
+        run: |
+          if [[ -n "${{ inputs.services }}" && "${{ inputs.services }}" != "all" ]]; then
+            services=$(echo "${{ inputs.services }}" | tr ',' '\n' | sed 's/ //g' | jq -R . | jq -sc .)
+          else
+            services=$(find services -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/package.json' \; -printf '%f\n' | sort | jq -R . | jq -sc .)
+          fi
+          echo "services=$services" >> "$GITHUB_OUTPUT"
+          echo "platforms=${{ inputs.platforms || 'linux/amd64,linux/arm64' }}" >> "$GITHUB_OUTPUT"
+          echo "Building: $services"
+
+      - name: Detect Docker Hub credentials
+        id: credentials
+        # `secrets` is not available in an `if:` expression, so availability is
+        # resolved once here and passed downstream as a job output.
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [[ -n "$DOCKERHUB_USERNAME" && -n "$DOCKERHUB_TOKEN" ]]; then
+            echo "dockerhub=true" >> "$GITHUB_OUTPUT"
+            echo "✓ Docker Hub credentials present — images will be mirrored."
+          else
+            echo "dockerhub=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOCKERHUB_USERNAME / DOCKERHUB_TOKEN are not set. Pushing to GHCR only."
+          fi
+
+  # ---------------------------------------------------------------------------
+  build-and-push:
+    name: ${{ matrix.service }}
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      # Required for cosign keyless signing via the GitHub OIDC provider.
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.preflight.outputs.services) }}
+
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # QEMU provides the arm64 emulation the cross-build needs.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=moby/buildkit:latest
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: needs.preflight.outputs.dockerhub-enabled == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute image names
+        id: names
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          images="${{ env.GHCR_REGISTRY }}/${owner}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}"
+          if [[ "${{ needs.preflight.outputs.dockerhub-enabled }}" == "true" ]]; then
+            images="${images}"$'\n'"docker.io/${DOCKERHUB_USERNAME}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}"
+          fi
+          {
+            echo 'images<<IMAGES_EOF'
+            echo "$images"
+            echo 'IMAGES_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Derive tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.names.outputs.images }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+            type=ref,event=branch
+            type=sha,format=long,prefix=sha-
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+          labels: |
+            org.opencontainers.image.title=staysphere-${{ matrix.service }}
+            org.opencontainers.image.description=StaySphere ${{ matrix.service }}
+            org.opencontainers.image.vendor=StaySphere
+            org.opencontainers.image.licenses=MIT
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/Dockerfile.service
+          platforms: ${{ needs.preflight.outputs.platforms }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            SERVICE=${{ matrix.service }}
+            VERSION=${{ steps.meta.outputs.version }}
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+          cache-from: type=gha,scope=publish-${{ matrix.service }}
+          cache-to: type=gha,scope=publish-${{ matrix.service }},mode=max
+          # A Software Bill of Materials plus SLSA provenance: consumers can see
+          # exactly what is inside the image and which run produced it.
+          sbom: true
+          provenance: mode=max
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign the images
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          # Keyless signing: the signature is bound to this workflow's OIDC
+          # identity, so there is no private key to store or rotate.
+          for tag in $TAGS; do
+            image="${tag%:*}@${DIGEST}"
+            echo "Signing $image"
+            cosign sign --yes "$image"
+          done
+
+      - name: Attest the build
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Summary
+        run: |
+          {
+            echo "### 🐳 staysphere-${{ matrix.service }}"
+            echo ""
+            echo "**Digest:** \`${{ steps.build.outputs.digest }}\`"
+            echo ""
+            echo "**Platforms:** \`${{ needs.preflight.outputs.platforms }}\`"
+            echo ""
+            echo "**Tags:**"
+            echo ""
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo ""
+            echo "Signed with cosign · SBOM and SLSA provenance attached."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  update-dockerhub-readme:
+    name: Sync Docker Hub description
+    needs: [preflight, build-and-push]
+    if: needs.preflight.outputs.dockerhub-enabled == 'true' && github.event_name == 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.preflight.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the repository description
+        run: |
+          mkdir -p /tmp/dockerhub
+          cat > /tmp/dockerhub/README.md <<'DESC'
+          # StaySphere — ${{ matrix.service }}
+
+          Part of [StaySphere](https://github.com/${{ github.repository }}), an event-driven
+          hotel operations and reservation platform.
+
+          ## Run
+
+          ```bash
+          docker run -d \
+            -p 3000:3000 \
+            -e DATABASE_URL="postgresql://..." \
+            -e JWT_ACCESS_SECRET="..." \
+            ${{ secrets.DOCKERHUB_USERNAME }}/staysphere-${{ matrix.service }}:latest
+          ```
+
+          ## Tags
+
+          | Tag | Meaning |
+          | --- | --- |
+          | `latest` | Most recent published release |
+          | `X.Y.Z` | An exact release |
+          | `X.Y`, `X` | Latest patch / minor within that line |
+          | `edge` | Current `main` — not for production |
+          | `sha-<commit>` | Exact commit |
+
+          ## Verify
+
+          ```bash
+          cosign verify ${{ secrets.DOCKERHUB_USERNAME }}/staysphere-${{ matrix.service }}:latest \
+            --certificate-identity-regexp "https://github.com/${{ github.repository }}/.*" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          ```
+
+          Images run as an unprivileged user, expose `/health` and `/ready`, and publish
+          Prometheus metrics on `/metrics`.
+
+          Licensed under MIT.
+          DESC
+
+      - name: Push the description
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/staysphere-${{ matrix.service }}
+          short-description: "StaySphere ${{ matrix.service }} — hotel operations platform"
+          readme-filepath: /tmp/dockerhub/README.md
