@@ -1,0 +1,94 @@
+name: Setup StaySphere workspace
+description: >-
+  Installs pnpm and Node, restores the dependency and Turborepo caches, and
+  installs the workspace. Every job that touches the monorepo starts here so
+  toolchain versions can never drift between jobs.
+
+inputs:
+  node-version:
+    description: Node.js version. Defaults to the version pinned in .nvmrc.
+    required: false
+    default: ""
+  install:
+    description: Whether to run `pnpm install`.
+    required: false
+    default: "true"
+  prisma-generate:
+    description: Generate Prisma clients for every service that declares a schema.
+    required: false
+    default: "false"
+
+outputs:
+  node-version:
+    description: The Node.js version that was installed.
+    value: ${{ steps.node.outputs.node-version }}
+  store-path:
+    description: Resolved pnpm store directory.
+    value: ${{ steps.pnpm-store.outputs.path }}
+
+runs:
+  using: composite
+  steps:
+    # pnpm must exist before actions/setup-node so its cache resolver works.
+    - name: Install pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        # Version comes from the root package.json `packageManager` field —
+        # one source of truth for local and CI.
+        run_install: false
+
+    - name: Resolve Node.js version
+      id: resolve-node
+      shell: bash
+      run: |
+        if [[ -n "${{ inputs.node-version }}" ]]; then
+          echo "version=${{ inputs.node-version }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "version=$(cat .nvmrc | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Set up Node.js
+      id: node
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ steps.resolve-node.outputs.version }}
+        cache: pnpm
+
+    - name: Resolve pnpm store
+      id: pnpm-store
+      shell: bash
+      run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+    - name: Restore pnpm store
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.pnpm-store.outputs.path }}
+        key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: ${{ runner.os }}-pnpm-
+
+    - name: Install dependencies
+      if: inputs.install == 'true'
+      shell: bash
+      # --frozen-lockfile fails the build if the lockfile and manifests disagree,
+      # which is what stops an unreviewed dependency from entering through CI.
+      run: pnpm install --frozen-lockfile
+
+    # Turborepo's local cache turns an unchanged package into a cache hit rather
+    # than a rebuild; the key includes the run id so each run writes a fresh
+    # entry while still restoring from the most recent one.
+    - name: Restore Turborepo cache
+      uses: actions/cache@v4
+      with:
+        path: .turbo
+        key: ${{ runner.os }}-turbo-${{ github.job }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-turbo-${{ github.job }}-
+          ${{ runner.os }}-turbo-
+
+    - name: Generate Prisma clients
+      if: inputs.prisma-generate == 'true'
+      shell: bash
+      # Generated into each service's own src/generated/prisma: pnpm resolves the
+      # default output into the shared store, where services would overwrite
+      # one another's client.
+      run: pnpm db:generate
