@@ -1,0 +1,381 @@
+name: CI
+
+# The gate every change passes before it can reach main.
+#
+# Job graph:
+#   preflight ─┬─ lint ──────────┐
+#              ├─ typecheck ─────┤
+#              ├─ test ──────────┼─ ci-passed (branch-protection target)
+#              ├─ build ─────────┤
+#              └─ docker-build ──┘
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
+  workflow_dispatch:
+
+# Superseded runs on the same ref are pointless spend; main is never cancelled
+# so the deployable history keeps a complete record.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  TURBO_TELEMETRY_DISABLED: 1
+  NEXT_TELEMETRY_DISABLED: 1
+  DO_NOT_TRACK: 1
+  FORCE_COLOR: 3
+
+jobs:
+  # ---------------------------------------------------------------------------
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft != true
+    timeout-minutes: 10
+    outputs:
+      services: ${{ steps.discover.outputs.services }}
+      apps: ${{ steps.discover.outputs.apps }}
+      has-services: ${{ steps.discover.outputs.has-services }}
+      has-apps: ${{ steps.discover.outputs.has-apps }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The build matrix is discovered from the filesystem rather than hardcoded,
+      # so adding services/foo-service is picked up with no workflow edit.
+      - name: Discover workspaces
+        id: discover
+        run: |
+          services=$(find services -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/package.json' \; -printf '%f\n' 2>/dev/null | sort | jq -R . | jq -sc .)
+          apps=$(find apps -mindepth 1 -maxdepth 1 -type d -exec test -f '{}/package.json' \; -printf '%f\n' 2>/dev/null | sort | jq -R . | jq -sc .)
+          services=${services:-[]}
+          apps=${apps:-[]}
+          {
+            echo "services=$services"
+            echo "apps=$apps"
+            echo "has-services=$([[ "$services" != "[]" ]] && echo true || echo false)"
+            echo "has-apps=$([[ "$apps" != "[]" ]] && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Summarise
+        run: |
+          {
+            echo "### Workspaces discovered"
+            echo ""
+            echo "| Kind | Members |"
+            echo "| --- | --- |"
+            echo "| Services | \`$(echo '${{ steps.discover.outputs.services }}' | jq -r 'join(", ")')\` |"
+            echo "| Apps | \`$(echo '${{ steps.discover.outputs.apps }}' | jq -r 'join(", ")')\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify the lockfile is in sync
+        run: |
+          # A manifest change without a matching lockfile update would otherwise
+          # only surface in the Docker build, long after review.
+          # --frozen-lockfile is the check: it refuses to proceed when the
+          # lockfile and any package.json disagree.
+          corepack enable
+          if ! pnpm install --frozen-lockfile --lockfile-only; then
+            echo "::error file=pnpm-lock.yaml::pnpm-lock.yaml is out of date. Run 'pnpm install' locally and commit the result."
+            exit 1
+          fi
+          echo "✓ pnpm-lock.yaml matches every package.json"
+
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint & format
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+
+      - name: ESLint
+        run: pnpm lint
+
+      - name: Prettier
+        run: pnpm format:check
+
+      - name: Service wiring
+        # Structural invariants that type checking and unit tests cannot express:
+        # a missing global guard, a missing principal middleware, a type-only
+        # import of an injected class, or a build that omits the Prisma client.
+        # Each of these has produced a runtime failure that every other gate
+        # passed cleanly.
+        run: pnpm check:wiring
+
+      - name: Commit message convention
+        # Only meaningful on a PR, where there is a base to compare against.
+        if: github.event_name == 'pull_request'
+        run: |
+          pnpm exec commitlint \
+            --from "${{ github.event.pull_request.base.sha }}" \
+            --to "${{ github.event.pull_request.head.sha }}" \
+            --verbose
+
+  # ---------------------------------------------------------------------------
+  typecheck:
+    name: Type check
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          prisma-generate: "true"
+      - run: pnpm typecheck
+
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test (Node ${{ matrix.node }})
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22 is the deployed runtime; 20 is the minimum the engines field allows.
+        node: ["20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          node-version: ${{ matrix.node }}
+          prisma-generate: "true"
+
+      - name: Unit tests with coverage
+        run: pnpm test:cov
+
+      - name: Upload coverage
+        # One matrix leg is enough; uploading both just duplicates the report.
+        if: matrix.node == '22'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            packages/*/coverage
+            services/*/coverage
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # Build-time placeholders. Real values are injected at deploy time; these
+      # exist only so the Next.js and Nest builds can resolve their config.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+      JWT_ACCESS_SECRET: ci-placeholder-access-secret-not-a-real-secret
+      JWT_REFRESH_SECRET: ci-placeholder-refresh-secret-not-a-real-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          prisma-generate: "true"
+
+      - name: Build every workspace
+        run: pnpm build
+
+      - name: Check build output exists
+        run: |
+          missing=0
+          for dir in services/*/; do
+            name=$(basename "$dir")
+            if [[ -f "$dir/package.json" && ! -f "$dir/dist/main.js" ]]; then
+              echo "::error::$name produced no dist/main.js"
+              missing=1
+            fi
+          done
+          for dir in apps/*/; do
+            name=$(basename "$dir")
+            if [[ -f "$dir/package.json" && ! -d "$dir/.next" ]]; then
+              echo "::error::$name produced no .next output"
+              missing=1
+            fi
+          done
+          exit $missing
+
+  # ---------------------------------------------------------------------------
+  docker-build:
+    name: Docker · ${{ matrix.service }}
+    needs: preflight
+    if: needs.preflight.outputs.has-services == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJson(needs.preflight.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build only — nothing is pushed from a pull request. This proves the
+      # image still builds without granting CI push credentials on untrusted code.
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infrastructure/docker/Dockerfile.service
+          build-args: |
+            SERVICE=${{ matrix.service }}
+            VERSION=ci-${{ github.sha }}
+            VCS_REF=${{ github.sha }}
+          push: false
+          load: true
+          tags: staysphere/${{ matrix.service }}:ci
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+
+      - name: Smoke test the image
+        run: |
+          # The image must at minimum start and expose a liveness endpoint.
+          docker run --rm -d --name smoke-${{ matrix.service }} \
+            -e NODE_ENV=production \
+            -e SERVICE_NAME=${{ matrix.service }} \
+            -e PORT=3000 \
+            -e DATABASE_URL=postgresql://ci:ci@127.0.0.1:5432/ci \
+            -e DIRECT_URL=postgresql://ci:ci@127.0.0.1:5432/ci \
+            -e JWT_ACCESS_SECRET=ci-placeholder-access-secret-not-a-real-secret \
+            -e JWT_REFRESH_SECRET=ci-placeholder-refresh-secret-not-a-real-secret \
+            -p 3000:3000 \
+            staysphere/${{ matrix.service }}:ci
+
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/health >/dev/null 2>&1; then
+              echo "✓ ${{ matrix.service }} answered /health after ${attempt}s"
+              docker rm -f smoke-${{ matrix.service }} >/dev/null
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "::error::${{ matrix.service }} never became healthy"
+          docker logs smoke-${{ matrix.service }} || true
+          docker rm -f smoke-${{ matrix.service }} >/dev/null || true
+          exit 1
+
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: End-to-end
+    needs: preflight
+    if: needs.preflight.outputs.has-apps == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Install Chromium
+        # --with-deps pulls the system libraries the browser needs; skipped
+        # entirely when the cache already holds the browser.
+        run: pnpm --filter @staysphere/e2e exec playwright install --with-deps chromium
+
+      - name: Build the front ends
+        run: pnpm build --filter=@staysphere/web --filter=@staysphere/admin --filter=@staysphere/staff
+
+      - name: Run the suite
+        run: pnpm --filter @staysphere/e2e run test:e2e
+
+      - name: Upload the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload failure traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: e2e/test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  manifests:
+    name: Kubernetes manifests
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL -o kubeconform.tar.gz \
+            https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar xzf kubeconform.tar.gz kubeconform
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Render the per-service manifests
+        run: ./infrastructure/kubernetes/render.sh "${{ github.repository_owner }}" ci-${{ github.sha }} rendered
+
+      - name: Validate the rendered manifests
+        run: kubeconform -strict -summary -kubernetes-version 1.31.0 rendered/
+
+      - name: Validate both overlays
+        run: |
+          for overlay in staging production; do
+            echo "::group::$overlay"
+            kubectl kustomize "infrastructure/kubernetes/overlays/$overlay" \
+              | kubeconform -strict -summary -kubernetes-version 1.31.0 -
+            echo "::endgroup::"
+          done
+
+      - name: Refuse a committed Secret with a real value
+        run: |
+          # secret.example.yaml is a template; anything else applying a Secret
+          # would put base64-encoded credentials in git, and base64 is not
+          # encryption.
+          offenders=$(grep -rl "^kind: Secret" infrastructure/kubernetes \
+            | grep -v 'secret.example.yaml' || true)
+          if [[ -n "$offenders" ]]; then
+            echo "::error::Secret manifests must not be committed: $offenders"
+            exit 1
+          fi
+          echo "✓ No Secret manifests are committed"
+
+  # ---------------------------------------------------------------------------
+  ci-passed:
+    name: CI passed
+    # A single required status check. Adding a job above never means editing
+    # branch protection — this gate fails if any dependency did not succeed.
+    needs: [preflight, lint, typecheck, test, build, docker-build, e2e, manifests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate results
+        run: |
+          results='${{ toJSON(needs) }}'
+          echo "$results" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          failed=$(echo "$results" | jq -r '[to_entries[] | select(.value.result != "success" and .value.result != "skipped")] | length')
+          if [[ "$failed" -gt 0 ]]; then
+            echo "::error::$failed job(s) did not succeed."
+            exit 1
+          fi
+          echo "All CI jobs succeeded."
