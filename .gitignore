@@ -1,0 +1,60 @@
+# ---- Dependencies ----
+node_modules/
+.pnp
+.pnp.js
+.yarn/
+
+# ---- Build output ----
+dist/
+build/
+out/
+.next/
+.turbo/
+*.tsbuildinfo
+coverage/
+.nyc_output/
+
+# ---- Environment ----
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ---- Prisma ----
+prisma/migrations/dev.db*
+*.db
+*.db-journal
+
+# ---- Logs ----
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# ---- Editors / OS ----
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.recommended.json
+.DS_Store
+Thumbs.db
+
+# ---- Deployment / tooling ----
+.vercel/
+.serverless/
+*.pem
+*.tgz
+
+# ---- Test artifacts ----
+playwright-report/
+test-results/
+blob-report/
+
+# ---- Prisma generated clients (per-service output) ----
+services/*/src/generated/
+
+# ---- E2E artefacts ----
+e2e/playwright-report/
+e2e/test-results/
+rendered/
