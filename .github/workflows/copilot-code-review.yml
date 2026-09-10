@@ -1,0 +1,166 @@
+name: Copilot Code Review
+
+# Requests a GitHub Copilot review on every pull request and runs the PR
+# hygiene checks that a human reviewer should never have to spend attention on.
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize, edited]
+
+concurrency:
+  group: copilot-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  request-review:
+    name: Request Copilot review
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Add Copilot as a reviewer
+        id: request
+        # Non-fatal by design: Copilot code review is a paid, org-enabled
+        # feature. If it is not enabled for this repository the PR must still be
+        # mergeable, so a failure here is reported and then tolerated.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set +e
+          response=$(gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/pulls/${PR_NUMBER}/requested_reviewers" \
+            -f 'reviewers[]=copilot-pull-request-reviewer[bot]' 2>&1)
+          status=$?
+          set -e
+
+          if [[ $status -eq 0 ]]; then
+            echo "requested=true" >> "$GITHUB_OUTPUT"
+            echo "✓ Copilot review requested for PR #${PR_NUMBER}"
+          else
+            echo "requested=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Could not request a Copilot review. Enable Copilot code review for this repository under Settings → Copilot, or review manually."
+            echo "$response"
+          fi
+
+      - name: Report
+        env:
+          REQUESTED: ${{ steps.request.outputs.requested }}
+        run: |
+          if [[ "$REQUESTED" == "true" ]]; then
+            echo "### 🤖 Copilot review requested" >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### ℹ️ Copilot review unavailable"
+              echo ""
+              echo "Enable **Settings → Copilot → Code review** to have Copilot review pull requests automatically."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  pr-hygiene:
+    name: PR hygiene
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Title follows Conventional Commits
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            docs
+            test
+            build
+            ci
+            chore
+            revert
+            style
+          scopes: |
+            gateway
+            auth
+            booking
+            hotel
+            room
+            pricing
+            payment
+            finance
+            housekeeping
+            maintenance
+            notification
+            review
+            reporting
+            web
+            admin
+            shared
+            contracts
+            infra
+            ci
+            deps
+            docs
+            release
+          requireScope: false
+          # The squash-merge commit takes the PR title, so it must satisfy the
+          # same convention commitlint enforces on individual commits.
+          subjectPattern: ^(?![A-Z])(?!.*\.$).+$
+          subjectPatternError: |
+            The subject "{subject}" must start lowercase and must not end with a period.
+
+      - uses: actions/checkout@v4
+
+      - name: Size label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ADDITIONS: ${{ github.event.pull_request.additions }}
+          DELETIONS: ${{ github.event.pull_request.deletions }}
+        run: |
+          total=$((ADDITIONS + DELETIONS))
+
+          if   [[ $total -lt 20   ]]; then label="size/xs"
+          elif [[ $total -lt 100  ]]; then label="size/s"
+          elif [[ $total -lt 400  ]]; then label="size/m"
+          elif [[ $total -lt 1000 ]]; then label="size/l"
+          else                             label="size/xl"
+          fi
+
+          echo "PR changes $total lines → $label"
+          gh label create "$label" --color ededed --description "Pull request size" 2>/dev/null || true
+          # Remove any previously applied size label so only one is ever present.
+          for existing in size/xs size/s size/m size/l size/xl; do
+            if [[ "$existing" != "$label" ]]; then
+              gh pr edit "$PR_NUMBER" --remove-label "$existing" 2>/dev/null || true
+            fi
+          done
+          gh pr edit "$PR_NUMBER" --add-label "$label"
+
+          if [[ "$label" == "size/xl" ]]; then
+            echo "::warning::This pull request changes $total lines. Consider splitting it — review quality drops sharply past ~400 lines."
+          fi
+
+      - name: Description is not empty
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          # ${#BODY} counts characters; a template left entirely unfilled is short.
+          if [[ ${#BODY} -lt 30 ]]; then
+            echo "::error::Fill in the pull request description so a reviewer knows what changed and why."
+            exit 1
+          fi
+          echo "✓ Description present (${#BODY} characters)"
