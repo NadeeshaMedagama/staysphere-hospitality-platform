@@ -1,0 +1,22 @@
+# Categories used when GitHub generates release notes from merged pull requests.
+changelog:
+  exclude:
+    labels: [ignore-for-release, duplicate, invalid, question]
+    authors: [dependabot, github-actions]
+  categories:
+    - title: 🚀 Features
+      labels: [feature, enhancement]
+    - title: 🐛 Fixes
+      labels: [bug, fix]
+    - title: ⚡ Performance
+      labels: [performance]
+    - title: 🔒 Security
+      labels: [security]
+    - title: 📦 Platform & infrastructure
+      labels: [infrastructure, ci, docker, kubernetes]
+    - title: 📚 Documentation
+      labels: [documentation]
+    - title: ⬆️ Dependencies
+      labels: [dependencies]
+    - title: 🧹 Other changes
+      labels: ["*"]
