@@ -1,0 +1,235 @@
+name: Publish to GitHub Marketplace
+
+# Validates, smoke-tests and releases the composite action defined by the root
+# action.yml ("StaySphere Service Deploy").
+#
+# GitHub Marketplace lists *Actions*, not applications. This workflow prepares
+# everything the listing needs — a validated action.yml, a tested action, a
+# release, and a moving major-version tag — after which the listing itself is
+# confirmed once in the GitHub UI (Releases → Edit → "Publish this Action to
+# the GitHub Marketplace"). That checkbox cannot be set through the API.
+
+on:
+  release:
+    types: [published]
+  push:
+    branches: [main]
+    paths: ["action.yml", ".github/workflows/publish-marketplace.yml"]
+  pull_request:
+    paths: ["action.yml"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish, e.g. v1.2.3. Defaults to the current release tag."
+        required: false
+        type: string
+
+concurrency:
+  group: marketplace-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  validate:
+    name: Validate action metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse action.yml
+        run: |
+          python3 - <<'PY'
+          import sys, yaml
+
+          with open('action.yml') as handle:
+              action = yaml.safe_load(handle)
+
+          errors = []
+
+          # Marketplace requires these; a listing is rejected without them.
+          for field in ('name', 'description', 'runs'):
+              if not action.get(field):
+                  errors.append(f"missing required top-level field: {field}")
+
+          branding = action.get('branding') or {}
+          if not branding.get('icon'):
+              errors.append('branding.icon is required for a Marketplace listing')
+          if branding.get('color') not in {
+              'white', 'yellow', 'blue', 'green', 'orange', 'red', 'purple', 'gray-dark',
+          }:
+              errors.append(f"branding.color {branding.get('color')!r} is not an accepted value")
+
+          description = action.get('description', '')
+          if len(description) < 30:
+              errors.append('description should be at least 30 characters')
+          if len(description) > 500:
+              errors.append('description must be at most 500 characters')
+
+          # Every declared output must reference a step that actually exists.
+          step_ids = {s.get('id') for s in action['runs'].get('steps', []) if s.get('id')}
+          for name, spec in (action.get('outputs') or {}).items():
+              value = str(spec.get('value', ''))
+              for token in value.split('steps.')[1:]:
+                  referenced = token.split('.')[0]
+                  if referenced not in step_ids:
+                      errors.append(f"output {name!r} references unknown step id {referenced!r}")
+
+          # A composite step that runs a script must declare its shell.
+          for index, step in enumerate(action['runs'].get('steps', [])):
+              if 'run' in step and not step.get('shell'):
+                  errors.append(f"step {index} ({step.get('name')!r}) has `run` but no `shell`")
+
+          if errors:
+              for error in errors:
+                  print(f"::error file=action.yml::{error}")
+              sys.exit(1)
+
+          print(f"✓ action.yml is valid — {action['name']!r}")
+          print(f"  inputs:  {len(action.get('inputs') or {})}")
+          print(f"  outputs: {len(action.get('outputs') or {})}")
+          print(f"  steps:   {len(action['runs'].get('steps', []))}")
+          PY
+
+      - name: Check the action is documented
+        run: |
+          if [[ ! -f docs/action.md ]]; then
+            echo "::error::docs/action.md is missing — the Marketplace listing needs usage documentation."
+            exit 1
+          fi
+          for token in 'image-namespace' 'service' 'health-url'; do
+            grep -q "$token" docs/action.md || {
+              echo "::error::docs/action.md does not document the '$token' input."
+              exit 1
+            }
+          done
+          echo "✓ Action documentation present"
+
+      - name: Lint every workflow
+        uses: raven-actions/actionlint@v2
+        with:
+          fail-on-error: true
+
+  # ---------------------------------------------------------------------------
+  smoke-test:
+    name: Smoke test the action
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Exercises the action against this very repository, in build-only mode:
+      # a listing that has never been executed is a listing that does not work.
+      - name: Run the action (build only)
+        id: run
+        uses: ./
+        with:
+          service: auth-service
+          image-namespace: ${{ github.repository_owner }}
+          version: smoke-test
+          platforms: linux/amd64
+          push: "false"
+
+      - name: Assert the outputs
+        env:
+          OUT_IMAGE: ${{ steps.run.outputs.image }}
+          OUT_VERSION: ${{ steps.run.outputs.version }}
+          OUT_HEALTHY: ${{ steps.run.outputs.healthy }}
+        run: |
+          set -euo pipefail
+          echo "image:   $OUT_IMAGE"
+          echo "version: $OUT_VERSION"
+          echo "healthy: $OUT_HEALTHY"
+
+          [[ "$OUT_VERSION" == "smoke-test" ]] \
+            || { echo "::error::version output was not honoured"; exit 1; }
+          [[ "$OUT_IMAGE" == *"staysphere-auth-service" ]] \
+            || { echo "::error::image name was not derived correctly"; exit 1; }
+          [[ "$OUT_HEALTHY" == "skipped" ]] \
+            || { echo "::error::health gate should be skipped when no health-url is supplied"; exit 1; }
+          echo "✓ Action behaved as documented"
+
+  # ---------------------------------------------------------------------------
+  release:
+    name: Tag the Marketplace release
+    needs: [validate, smoke-test]
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve the version
+        id: version
+        run: |
+          version="${{ inputs.version || github.event.release.tag_name }}"
+          if [[ -z "$version" ]]; then
+            echo "::error::No version could be resolved."
+            exit 1
+          fi
+          [[ "$version" == v* ]] || version="v$version"
+          if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
+            echo "::error::'$version' is not a valid semantic version tag."
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "major=${version%%.*}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Move the major-version tag
+        # Consumers pin to `@v1` and receive fixes without editing their
+        # workflows; this is the convention every first-party action follows.
+        run: |
+          set -euo pipefail
+          major="${{ steps.version.outputs.major }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -fa "$major" -m "StaySphere Service Deploy $major → ${{ steps.version.outputs.version }}"
+          git push origin "$major" --force
+          echo "✓ $major now points at ${{ steps.version.outputs.version }}"
+
+      - name: Publishing instructions
+        run: |
+          {
+            echo "### 🏪 Marketplace release prepared"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Action | **StaySphere Service Deploy** |"
+            echo "| Version | \`${{ steps.version.outputs.version }}\` |"
+            echo "| Major tag | \`${{ steps.version.outputs.major }}\` |"
+            echo ""
+            echo "#### One manual step remains"
+            echo ""
+            echo "Marketplace listing cannot be enabled through the API. Once per action:"
+            echo ""
+            echo "1. Open [the release](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.version.outputs.version }})."
+            echo "2. Choose **Edit release**."
+            echo "3. Tick **Publish this Action to the GitHub Marketplace**, accept the terms, pick a category."
+            echo "4. **Update release**."
+            echo ""
+            echo "Subsequent releases inherit the listing automatically."
+            echo ""
+            echo "#### Consumers use it as"
+            echo ""
+            echo '```yaml'
+            echo "- uses: ${{ github.repository }}@${{ steps.version.outputs.major }}"
+            echo "  with:"
+            echo "    service: booking-service"
+            echo "    image-namespace: \${{ github.repository_owner }}"
+            echo "    registry-username: \${{ github.actor }}"
+            echo "    registry-password: \${{ secrets.GITHUB_TOKEN }}"
+            echo "    health-url: https://api.example.com/health"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
