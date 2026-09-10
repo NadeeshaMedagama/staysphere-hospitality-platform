@@ -1,0 +1,101 @@
+name: Dependabot Auto-merge
+
+# Enables auto-merge on low-risk Dependabot pull requests once every required
+# check has passed.
+#
+# The risk model:
+#   • dev dependencies, any patch/minor  → auto-merge
+#   • runtime dependencies, patch only   → auto-merge
+#   • anything major, or a security fix  → human review
+#
+# Auto-merge does NOT bypass branch protection: GitHub still waits for the
+# required checks. This job only expresses the intent to merge when they pass.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, labeled]
+
+permissions:
+  contents: read
+
+jobs:
+  auto-merge:
+    name: Evaluate and enable auto-merge
+    # pull_request_target runs with write access against the *base* repository,
+    # so it must never check out or execute PR code. This job only calls APIs.
+    if: github.actor == 'dependabot[bot]' && github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Fetch update metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decide
+        id: decide
+        env:
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+          DEPENDENCY_TYPE: ${{ steps.metadata.outputs.dependency-type }}
+          ALERT_STATE: ${{ steps.metadata.outputs.alert-state }}
+          ECOSYSTEM: ${{ steps.metadata.outputs.package-ecosystem }}
+        run: |
+          reason=""
+          auto="false"
+
+          if [[ "$ALERT_STATE" == "OPEN" ]]; then
+            reason="security advisory — a human must confirm the fix and its blast radius"
+          elif [[ "$UPDATE_TYPE" == "version-update:semver-major" ]]; then
+            reason="major version bump"
+          elif [[ "$DEPENDENCY_TYPE" == "direct:development" || "$DEPENDENCY_TYPE" == "indirect" ]]; then
+            auto="true"; reason="development or transitive dependency, non-major"
+          elif [[ "$UPDATE_TYPE" == "version-update:semver-patch" ]]; then
+            auto="true"; reason="runtime patch release"
+          else
+            reason="runtime minor bump — reviewed by a human"
+          fi
+
+          echo "auto=$auto" >> "$GITHUB_OUTPUT"
+          echo "reason=$reason" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Dependabot auto-merge"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Ecosystem | \`$ECOSYSTEM\` |"
+            echo "| Update type | \`$UPDATE_TYPE\` |"
+            echo "| Dependency type | \`$DEPENDENCY_TYPE\` |"
+            echo "| Security alert | \`${ALERT_STATE:-none}\` |"
+            echo "| Decision | **$([[ "$auto" == "true" ]] && echo 'auto-merge' || echo 'manual review')** |"
+            echo "| Reason | $reason |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Approve
+        if: steps.decide.outputs.auto == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr review --approve "$PR_URL" \
+            --body "Auto-approved: ${{ steps.decide.outputs.reason }}."
+
+      - name: Enable auto-merge
+        if: steps.decide.outputs.auto == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"
+
+      - name: Flag for manual review
+        if: steps.decide.outputs.auto != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh label create "needs-review" --color d93f0b --description "Requires a human before merge" 2>/dev/null || true
+          gh pr edit "$PR_URL" --add-label "needs-review"
+          gh pr comment "$PR_URL" --body "🔍 Held for manual review — ${{ steps.decide.outputs.reason }}."
