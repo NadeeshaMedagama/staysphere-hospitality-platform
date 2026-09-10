@@ -1,0 +1,146 @@
+name: Publish to GitHub Packages
+
+# Publishes the shareable libraries — @staysphere/contracts and
+# @staysphere/service-core — to the GitHub npm registry so other repositories
+# (a mobile client, an internal tool) can depend on the same domain contracts
+# rather than copying enums and event shapes.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "npm dist-tag to publish under"
+        required: false
+        default: latest
+        type: string
+      dry-run:
+        description: Pack and validate without publishing
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: publish-packages-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # `packages: write` publishes; `id-token: write` lets npm attach a
+      # provenance attestation binding the tarball to this workflow run.
+      packages: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [contracts, service-core]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+
+      - name: Configure the GitHub npm registry
+        run: |
+          # GitHub Packages requires the package scope to match the repository
+          # owner. The workspace uses @staysphere internally; when the repo is
+          # not owned by an org of that name, the scope is rewritten at publish
+          # time so local imports stay stable.
+          cat > .npmrc <<'NPMRC'
+          @${{ github.repository_owner }}:registry=https://npm.pkg.github.com
+          @staysphere:registry=https://npm.pkg.github.com
+          //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+          NPMRC
+
+      - name: Prepare the manifest
+        id: prepare
+        working-directory: packages/${{ matrix.package }}
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          owner_lc=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          original=$(jq -r .name package.json)
+
+          if [[ "$owner_lc" == "staysphere" ]]; then
+            published="$original"
+          else
+            # @staysphere/contracts -> @<owner>/staysphere-contracts
+            published="@${owner_lc}/staysphere-${{ matrix.package }}"
+          fi
+
+          version=$(jq -r .version package.json)
+          jq --arg name "$published" '.name = $name' package.json > package.json.tmp
+          mv package.json.tmp package.json
+
+          {
+            echo "name=$published"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+          echo "Publishing $original as $published@$version"
+
+      - name: Build
+        run: pnpm --filter "./packages/${{ matrix.package }}" run build
+
+      - name: Verify the tarball contents
+        working-directory: packages/${{ matrix.package }}
+        run: |
+          # `npm pack --dry-run` shows exactly what would ship. A package that
+          # accidentally includes src/ or .env is caught here, not by consumers.
+          npm pack --dry-run 2>&1 | tee /tmp/pack.txt
+          if grep -qiE '(^|/)\.env|/src/|\.map$' /tmp/pack.txt; then
+            echo "::warning::The tarball contains sources or maps — check the \"files\" field."
+          fi
+
+      - name: Check whether the version is already published
+        id: exists
+        working-directory: packages/${{ matrix.package }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if npm view "${{ steps.prepare.outputs.name }}@${{ steps.prepare.outputs.version }}" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::${{ steps.prepare.outputs.name }}@${{ steps.prepare.outputs.version }} is already published; skipping."
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish
+        if: steps.exists.outputs.published == 'false' && inputs.dry-run != true
+        working-directory: packages/${{ matrix.package }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npm publish \
+            --provenance \
+            --access public \
+            --tag "${{ inputs.tag || 'latest' }}"
+
+      - name: Summary
+        run: |
+          {
+            echo "### 📦 ${{ steps.prepare.outputs.name }}"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Version | \`${{ steps.prepare.outputs.version }}\` |"
+            echo "| Registry | \`npm.pkg.github.com\` |"
+            echo "| dist-tag | \`${{ inputs.tag || 'latest' }}\` |"
+            echo "| Result | ${{ steps.exists.outputs.published == 'true' && 'already published — skipped' || (inputs.dry-run == true && 'dry run' || 'published ✅') }} |"
+            echo ""
+            echo "Install with:"
+            echo ""
+            echo '```bash'
+            echo "npm install ${{ steps.prepare.outputs.name }}@${{ steps.prepare.outputs.version }}"
+            echo '```'
+            echo ""
+            echo "> Consumers need an \`.npmrc\` pointing the scope at \`https://npm.pkg.github.com\` and a token with \`read:packages\`."
+          } >> "$GITHUB_STEP_SUMMARY"
