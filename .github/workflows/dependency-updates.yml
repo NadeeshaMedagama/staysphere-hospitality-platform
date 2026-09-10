@@ -1,0 +1,150 @@
+name: Dependency Updates
+
+# Dependabot handles per-package bumps. This workflow covers what it cannot:
+#   • refreshing the lockfile as a whole so transitive drift does not accumulate
+#   • applying available security fixes in one pass
+#   • reporting how far behind the workspace has fallen
+#
+# It opens a single reviewable pull request rather than committing to main.
+
+on:
+  schedule:
+    # Fortnightly, after the Monday Dependabot window has settled.
+    - cron: "0 7 * * 3"
+  workflow_dispatch:
+    inputs:
+      strategy:
+        description: How aggressively to update
+        required: true
+        default: minor
+        type: choice
+        options: [patch, minor, latest, security-only]
+      dry-run:
+        description: Report only; do not open a pull request
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: dependency-updates
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    name: Refresh dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      STRATEGY: ${{ inputs.strategy || 'minor' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+
+      - name: Record the current state
+        run: pnpm list --depth 0 --json > /tmp/before.json || true
+
+      - name: Report outdated packages
+        id: outdated
+        run: |
+          set +e
+          pnpm outdated --format json > /tmp/outdated.json 2>/dev/null
+          set -e
+          count=$(jq 'length // 0' /tmp/outdated.json 2>/dev/null || echo 0)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "$count package(s) behind the registry"
+
+      - name: Apply updates
+        id: apply
+        run: |
+          case "$STRATEGY" in
+            patch)         pnpm update --recursive ;;
+            minor)         pnpm update --recursive ;;
+            latest)        pnpm update --recursive --latest ;;
+            security-only) pnpm audit --fix || echo "::notice::pnpm audit --fix made no changes" ;;
+          esac
+
+          if git diff --quiet -- pnpm-lock.yaml package.json '**/package.json'; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Nothing to update."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify the workspace still passes
+        if: steps.apply.outputs.changed == 'true'
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+          JWT_ACCESS_SECRET: ci-placeholder-access-secret-not-a-real-secret
+          JWT_REFRESH_SECRET: ci-placeholder-refresh-secret-not-a-real-secret
+        run: |
+          # An update that does not build is worse than no update — proving it
+          # here means the PR arrives already known-good.
+          pnpm install --no-frozen-lockfile
+          pnpm db:generate
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm build
+
+      - name: Build the change summary
+        if: steps.apply.outputs.changed == 'true'
+        id: summary
+        run: |
+          {
+            echo 'body<<PR_BODY_EOF'
+            echo "## Automated dependency refresh"
+            echo ""
+            echo "Strategy: \`$STRATEGY\`"
+            echo ""
+            echo "### Verified"
+            echo ""
+            echo "- \`pnpm lint\` ✅"
+            echo "- \`pnpm typecheck\` ✅"
+            echo "- \`pnpm test\` ✅"
+            echo "- \`pnpm build\` ✅"
+            echo ""
+            echo "### Manifest changes"
+            echo ""
+            echo '```diff'
+            git --no-pager diff -- '**/package.json' package.json | head -200
+            echo '```'
+            echo ""
+            echo "_Opened by the \`dependency-updates\` workflow. Review the diff before merging._"
+            echo 'PR_BODY_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open a pull request
+        if: steps.apply.outputs.changed == 'true' && inputs.dry-run != true
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: chore/dependency-refresh
+          # Reuse one branch so a later run updates the open PR instead of
+          # stacking a new one every fortnight.
+          delete-branch: true
+          commit-message: |
+            chore(deps): refresh workspace dependencies (${{ env.STRATEGY }})
+
+            Applied by the dependency-updates workflow and verified against
+            lint, typecheck, test and build.
+          title: "chore(deps): refresh workspace dependencies"
+          body: ${{ steps.summary.outputs.body }}
+          labels: dependencies, automated
+          draft: false
+
+      - name: Nothing to do
+        if: steps.apply.outputs.changed != 'true'
+        run: |
+          {
+            echo "### ✅ Dependencies are already current"
+            echo ""
+            echo "Strategy \`$STRATEGY\` produced no changes."
+          } >> "$GITHUB_STEP_SUMMARY"
