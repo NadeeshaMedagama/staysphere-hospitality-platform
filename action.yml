@@ -1,0 +1,299 @@
+name: StaySphere Service Deploy
+description: >-
+  Build, publish and roll out a containerised microservice in one step: multi-arch
+  image build, push to any OCI registry, deployment trigger, and a health gate
+  that fails the job if the new revision never becomes healthy.
+author: NadeeshaMedagama
+
+branding:
+  icon: upload-cloud
+  color: green
+
+inputs:
+  # ---------------------------------------------------------------- identity --
+  service:
+    description: Service name. Used for the image name and passed to the Dockerfile as the SERVICE build arg.
+    required: true
+  version:
+    description: Version to tag the image with. Defaults to the git ref name with any leading "v" removed.
+    required: false
+    default: ""
+
+  # ----------------------------------------------------------------- build ----
+  context:
+    description: Docker build context.
+    required: false
+    default: "."
+  dockerfile:
+    description: Path to the Dockerfile.
+    required: false
+    default: infrastructure/docker/Dockerfile.service
+  platforms:
+    description: Comma-separated target platforms.
+    required: false
+    default: linux/amd64
+  build-args:
+    description: Additional build arguments, one KEY=VALUE per line.
+    required: false
+    default: ""
+  cache-scope:
+    description: Cache scope key for the GitHub Actions build cache.
+    required: false
+    default: ""
+
+  # -------------------------------------------------------------- registry ----
+  registry:
+    description: OCI registry host, e.g. ghcr.io or docker.io.
+    required: false
+    default: ghcr.io
+  image-namespace:
+    description: Registry namespace — an organisation, user or project.
+    required: true
+  image-name:
+    description: Image name. Defaults to "staysphere-<service>".
+    required: false
+    default: ""
+  registry-username:
+    description: Registry username.
+    required: false
+    default: ""
+  registry-password:
+    description: Registry password or token. Pass a secret, never a literal.
+    required: false
+    default: ""
+  push:
+    description: Push the image. Set to "false" to build only — the usual choice on a pull request.
+    required: false
+    default: "true"
+  extra-tags:
+    description: Additional tags to apply, one per line. Values may be bare tags or fully qualified references.
+    required: false
+    default: ""
+
+  # ---------------------------------------------------------------- deploy ----
+  deploy-webhook:
+    description: URL called with POST after a successful push to trigger the rollout. Skipped when empty.
+    required: false
+    default: ""
+  deploy-payload:
+    description: JSON body sent to the deploy webhook. Defaults to service, image and digest.
+    required: false
+    default: ""
+
+  # ---------------------------------------------------------------- health ----
+  health-url:
+    description: URL polled after deployment. Skipped when empty.
+    required: false
+    default: ""
+  health-timeout:
+    description: Seconds to wait for the health check to pass.
+    required: false
+    default: "180"
+  health-interval:
+    description: Seconds between health check attempts.
+    required: false
+    default: "5"
+
+outputs:
+  image:
+    description: Fully qualified image reference without a tag.
+    value: ${{ steps.identity.outputs.image }}
+  tags:
+    description: Newline-separated list of tags that were applied.
+    value: ${{ steps.identity.outputs.tags }}
+  digest:
+    description: Image digest produced by the build.
+    value: ${{ steps.build.outputs.digest }}
+  version:
+    description: Resolved version string.
+    value: ${{ steps.identity.outputs.version }}
+  healthy:
+    description: '"true" when the health gate passed, "skipped" when no health-url was supplied.'
+    value: ${{ steps.health.outputs.healthy }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve image identity
+      id: identity
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        version="${{ inputs.version }}"
+        if [[ -z "$version" ]]; then
+          version="${GITHUB_REF_NAME#v}"
+          # A branch name is not a usable tag; fall back to the short SHA.
+          [[ "$GITHUB_REF_TYPE" != "tag" ]] && version="$(echo "${GITHUB_SHA}" | cut -c1-7)"
+        fi
+
+        name="${{ inputs.image-name }}"
+        [[ -z "$name" ]] && name="staysphere-${{ inputs.service }}"
+
+        namespace=$(echo "${{ inputs.image-namespace }}" | tr '[:upper:]' '[:lower:]')
+        image="${{ inputs.registry }}/${namespace}/${name}"
+
+        tags="${image}:${version}"$'\n'"${image}:sha-${GITHUB_SHA}"
+        while IFS= read -r extra; do
+          [[ -z "$extra" ]] && continue
+          # Accept both "1.2.3" and "ghcr.io/ns/name:1.2.3".
+          if [[ "$extra" == *"/"* ]]; then
+            tags="${tags}"$'\n'"${extra}"
+          else
+            tags="${tags}"$'\n'"${image}:${extra}"
+          fi
+        done <<< "${{ inputs.extra-tags }}"
+
+        {
+          echo "image=$image"
+          echo "version=$version"
+          echo 'tags<<TAGS_EOF'
+          echo "$tags"
+          echo 'TAGS_EOF'
+        } >> "$GITHUB_OUTPUT"
+
+        echo "::notice::Building ${image}:${version} for ${{ inputs.platforms }}"
+
+    - name: Validate inputs
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ ! -f "${{ inputs.dockerfile }}" ]]; then
+          echo "::error::Dockerfile not found at '${{ inputs.dockerfile }}'"
+          exit 1
+        fi
+        if [[ "${{ inputs.push }}" == "true" && -z "${{ inputs.registry-password }}" ]]; then
+          echo "::error::push is 'true' but no registry-password was supplied."
+          exit 1
+        fi
+
+    - name: Set up QEMU
+      # Only needed when a non-native architecture is in the target list.
+      if: contains(inputs.platforms, 'arm') || contains(inputs.platforms, 'ppc') || contains(inputs.platforms, 's390')
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to the registry
+      if: inputs.push == 'true'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ inputs.registry }}
+        username: ${{ inputs.registry-username }}
+        password: ${{ inputs.registry-password }}
+
+    - name: Build and push
+      id: build
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.dockerfile }}
+        platforms: ${{ inputs.platforms }}
+        push: ${{ inputs.push == 'true' }}
+        load: ${{ inputs.push != 'true' && !contains(inputs.platforms, ',') }}
+        tags: ${{ steps.identity.outputs.tags }}
+        build-args: |
+          SERVICE=${{ inputs.service }}
+          VERSION=${{ steps.identity.outputs.version }}
+          VCS_REF=${{ github.sha }}
+          ${{ inputs.build-args }}
+        labels: |
+          org.opencontainers.image.title=${{ inputs.service }}
+          org.opencontainers.image.version=${{ steps.identity.outputs.version }}
+          org.opencontainers.image.revision=${{ github.sha }}
+          org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+        cache-from: type=gha,scope=${{ inputs.cache-scope || inputs.service }}
+        cache-to: type=gha,scope=${{ inputs.cache-scope || inputs.service }},mode=max
+        provenance: ${{ inputs.push == 'true' }}
+        sbom: ${{ inputs.push == 'true' }}
+
+    - name: Trigger the deployment
+      if: inputs.push == 'true' && inputs.deploy-webhook != ''
+      shell: bash
+      env:
+        WEBHOOK: ${{ inputs.deploy-webhook }}
+        PAYLOAD: ${{ inputs.deploy-payload }}
+      run: |
+        set -euo pipefail
+        body="$PAYLOAD"
+        if [[ -z "$body" ]]; then
+          body=$(jq -nc \
+            --arg service "${{ inputs.service }}" \
+            --arg image "${{ steps.identity.outputs.image }}" \
+            --arg version "${{ steps.identity.outputs.version }}" \
+            --arg digest "${{ steps.build.outputs.digest }}" \
+            --arg commit "${GITHUB_SHA}" \
+            '{service:$service, image:$image, version:$version, digest:$digest, commit:$commit}')
+        fi
+
+        status=$(curl -sS -o /tmp/deploy-response.txt -w '%{http_code}' \
+          -X POST "$WEBHOOK" \
+          -H 'Content-Type: application/json' \
+          --max-time 60 \
+          --retry 3 --retry-delay 5 --retry-connrefused \
+          -d "$body")
+
+        echo "Deploy webhook responded HTTP $status"
+        cat /tmp/deploy-response.txt || true
+        if [[ "$status" -lt 200 || "$status" -ge 300 ]]; then
+          echo "::error::Deploy webhook returned HTTP $status"
+          exit 1
+        fi
+
+    - name: Wait for the service to become healthy
+      id: health
+      if: always()
+      shell: bash
+      env:
+        URL: ${{ inputs.health-url }}
+        TIMEOUT: ${{ inputs.health-timeout }}
+        INTERVAL: ${{ inputs.health-interval }}
+      run: |
+        set -uo pipefail
+
+        if [[ -z "$URL" ]]; then
+          echo "healthy=skipped" >> "$GITHUB_OUTPUT"
+          echo "No health-url supplied; skipping the health gate."
+          exit 0
+        fi
+
+        deadline=$(( $(date +%s) + TIMEOUT ))
+        attempt=0
+
+        # Poll rather than sleeping a fixed period: a fast rollout should not
+        # cost the pipeline its whole timeout budget.
+        while [[ $(date +%s) -lt $deadline ]]; do
+          attempt=$((attempt + 1))
+          status=$(curl -sS -o /tmp/health.txt -w '%{http_code}' --max-time 10 "$URL" || echo 000)
+          if [[ "$status" == "200" ]]; then
+            echo "healthy=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$URL healthy after ${attempt} attempt(s)"
+            cat /tmp/health.txt || true
+            exit 0
+          fi
+          echo "  attempt ${attempt}: HTTP ${status} — retrying in ${INTERVAL}s"
+          sleep "$INTERVAL"
+        done
+
+        echo "healthy=false" >> "$GITHUB_OUTPUT"
+        echo "::error::$URL did not become healthy within ${TIMEOUT}s"
+        cat /tmp/health.txt || true
+        exit 1
+
+    - name: Summary
+      if: always()
+      shell: bash
+      run: |
+        {
+          echo "### 🚀 ${{ inputs.service }}"
+          echo ""
+          echo "| Field | Value |"
+          echo "| --- | --- |"
+          echo "| Image | \`${{ steps.identity.outputs.image }}\` |"
+          echo "| Version | \`${{ steps.identity.outputs.version }}\` |"
+          echo "| Digest | \`${{ steps.build.outputs.digest || 'not pushed' }}\` |"
+          echo "| Platforms | \`${{ inputs.platforms }}\` |"
+          echo "| Pushed | \`${{ inputs.push }}\` |"
+          echo "| Health | \`${{ steps.health.outputs.healthy || 'skipped' }}\` |"
+        } >> "$GITHUB_STEP_SUMMARY"
