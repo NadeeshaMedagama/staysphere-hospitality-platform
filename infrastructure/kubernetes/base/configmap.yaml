@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: staysphere-config
+  namespace: staysphere
+data:
+  NODE_ENV: production
+  LOG_LEVEL: info
+  METRICS_ENABLED: "true"
+
+  # In-cluster service discovery. Each name resolves to the Service below.
+  AUTH_SERVICE_URL: http://auth-service:3000
+  BOOKING_SERVICE_URL: http://booking-service:3000
+  HOTEL_SERVICE_URL: http://hotel-service:3000
+  ROOM_SERVICE_URL: http://room-service:3000
+  PRICING_SERVICE_URL: http://pricing-service:3000
+  PAYMENT_SERVICE_URL: http://payment-service:3000
+  STAY_SERVICE_URL: http://stay-service:3000
+  FINANCE_SERVICE_URL: http://finance-service:3000
+  HOUSEKEEPING_SERVICE_URL: http://housekeeping-service:3000
+  MAINTENANCE_SERVICE_URL: http://maintenance-service:3000
+  NOTIFICATION_SERVICE_URL: http://notification-service:3000
+  REVIEW_SERVICE_URL: http://review-service:3000
+  REPORTING_SERVICE_URL: http://reporting-service:3000
+  AUDIT_SERVICE_URL: http://audit-service:3000
+
+  KAFKA_BROKERS: kafka:9092
+  REDIS_URL: redis://redis:6379
+
+  RATE_LIMIT_TTL_SECONDS: "60"
+  RATE_LIMIT_MAX: "120"
+  UPSTREAM_TIMEOUT_MS: "10000"
+  CIRCUIT_FAILURE_THRESHOLD: "5"
+  CIRCUIT_RESET_MS: "30000"

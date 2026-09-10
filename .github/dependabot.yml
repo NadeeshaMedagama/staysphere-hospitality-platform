@@ -1,0 +1,104 @@
+# Dependabot configuration for StaySphere.
+#
+# Updates are grouped so a routine week produces a handful of reviewable pull
+# requests instead of forty. Grouping is by blast radius: patch and minor bumps
+# of dev tooling are near-zero risk and merge automatically (see
+# dependabot-auto-merge.yml), while a major bump of a runtime dependency always
+# gets a human.
+
+version: 2
+
+updates:
+  # ---------------------------------------------------------------- workspace
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Asia/Colombo
+    open-pull-requests-limit: 10
+    versioning-strategy: increase
+    labels: [dependencies, javascript]
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+      include: scope
+    groups:
+      nestjs:
+        patterns: ["@nestjs/*", "reflect-metadata", "rxjs"]
+        update-types: [minor, patch]
+      next-react:
+        patterns:
+          ["next", "react", "react-dom", "@types/react", "@types/react-dom", "eslint-config-next"]
+        update-types: [minor, patch]
+      prisma:
+        patterns: ["prisma", "@prisma/*"]
+      tooling:
+        patterns:
+          - "typescript"
+          - "turbo"
+          - "eslint"
+          - "@eslint/*"
+          - "typescript-eslint"
+          - "prettier*"
+          - "jest"
+          - "ts-jest"
+          - "@types/jest"
+          - "vitest"
+          - "@vitest/*"
+          - "tsup"
+          - "tsx"
+          - "rimraf"
+        update-types: [minor, patch]
+      tailwind:
+        patterns: ["tailwindcss", "@tailwindcss/*", "tailwind-merge", "clsx"]
+      observability:
+        patterns: ["pino*", "nestjs-pino", "prom-client", "@opentelemetry/*"]
+      types:
+        patterns: ["@types/*"]
+        exclude-patterns: ["@types/react", "@types/react-dom", "@types/jest"]
+        update-types: [minor, patch]
+    ignore:
+      # Node type definitions must stay on the major matching the runtime in
+      # .nvmrc; bumping them independently produces APIs the runtime lacks.
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
+
+  # ----------------------------------------------------------- GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:30"
+      timezone: Asia/Colombo
+    open-pull-requests-limit: 5
+    labels: [dependencies, github-actions]
+    commit-message:
+      prefix: "ci(deps)"
+      include: scope
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # ------------------------------------------------------------------- Docker
+  - package-ecosystem: docker
+    directories:
+      - /infrastructure/docker
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Colombo
+    open-pull-requests-limit: 5
+    labels: [dependencies, docker]
+    commit-message:
+      prefix: "build(docker)"
+      include: scope
+    ignore:
+      # The Node base image major is pinned to the supported runtime; it moves
+      # deliberately, alongside .nvmrc and the engines field.
+      - dependency-name: "node"
+        update-types: [version-update:semver-major]
