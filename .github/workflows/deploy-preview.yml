@@ -1,0 +1,115 @@
+name: Deploy Preview
+
+# Publishes a Vercel preview for every pull request and posts the URLs back to
+# the PR, so a reviewer can open the actual change rather than imagine it from
+# a diff.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/deploy-preview.yml"
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Preflight
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      enabled: ${{ steps.credentials.outputs.enabled }}
+    steps:
+      - name: Detect Vercel credentials
+        id: credentials
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        run: |
+          if [[ -n "$VERCEL_TOKEN" && -n "$VERCEL_ORG_ID" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Vercel credentials are not configured; preview deployments are disabled."
+          fi
+
+  deploy:
+    name: Preview · ${{ matrix.app }}
+    needs: preflight
+    if: needs.preflight.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: preview
+      url: ${{ steps.deploy.outputs.url }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: web
+            project-secret: VERCEL_PROJECT_ID_WEB
+          - app: admin
+            project-secret: VERCEL_PROJECT_ID_ADMIN
+          - app: staff
+            project-secret: VERCEL_PROJECT_ID_STAFF
+    outputs:
+      web-url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+
+      - run: pnpm add -g vercel@latest
+
+      - name: Pull the preview environment
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets[matrix.project-secret] }}
+        working-directory: apps/${{ matrix.app }}
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets[matrix.project-secret] }}
+          NEXT_PUBLIC_APP_VERSION: pr-${{ github.event.pull_request.number }}
+          NEXT_PUBLIC_API_URL: ${{ vars.STAGING_API_URL }}
+        working-directory: apps/${{ matrix.app }}
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy
+        id: deploy
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets[matrix.project-secret] }}
+        working-directory: apps/${{ matrix.app }}
+        run: |
+          set -euo pipefail
+          url=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Comment the preview URL
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          # A per-app key updates the same comment in place instead of adding a
+          # new one on every push.
+          header: preview-${{ matrix.app }}
+          message: |
+            ### ▲ Preview — `${{ matrix.app }}`
+
+            | | |
+            | --- | --- |
+            | **URL** | ${{ steps.deploy.outputs.url }} |
+            | **Commit** | `${{ github.event.pull_request.head.sha }}` |
+            | **Updated** | <!-- timestamp -->${{ github.run_id }} |
+
+            <sub>Rebuilt automatically on every push to this pull request.</sub>
