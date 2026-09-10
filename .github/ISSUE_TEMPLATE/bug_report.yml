@@ -1,0 +1,85 @@
+name: 🐛 Bug report
+description: Something behaves differently from how it is documented or intended.
+title: "fix: "
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. The more precisely you can describe what happened,
+        the faster this gets fixed.
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where does it occur?
+      options:
+        - api-gateway
+        - auth-service
+        - booking-service
+        - apps/web (guest site)
+        - apps/admin (operations console)
+        - packages/contracts
+        - packages/service-core
+        - CI / CD pipeline
+        - Docker / infrastructure
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Observed behaviour, and what you expected instead.
+      placeholder: |
+        Expected: cancelling a booking 8 days out refunds 100%.
+        Actual: it refunded 50%.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs, error output or request id
+      description: >-
+        Paste the `requestId` from the error envelope if you have one — it ties
+        the request together across every service.
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v1.2.3 or a commit SHA
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options: [Local development, Preview, Staging, Production]
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I have not included any secret, token or personal data.
+          required: true
