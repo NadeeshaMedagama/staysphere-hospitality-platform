@@ -1,0 +1,15 @@
+{
+  "cookies": [
+    {
+      "name": "staysphere_admin_session",
+      "value": "%7B%22user%22%3A%7B%22id%22%3A%22cmttln3mq0001zqs0em5uqyqx%22%2C%22email%22%3A%22manager%40staysphere.local%22%2C%22fullName%22%3A%22Duty%20Manager%22%2C%22roles%22%3A%5B%22MANAGER%22%5D%2C%22hotelId%22%3A%22cmttlj6tr0000zqkhlyi5rin5%22%2C%22status%22%3A%22ACTIVE%22%7D%2C%22accessToken%22%3A%22eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJjbXR0bG4zbXEwMDAxenFzMGVtNXVxeXF4IiwiZW1haWwiOiJtYW5hZ2VyQHN0YXlzcGhlcmUubG9jYWwiLCJyb2xlcyI6WyJNQU5BR0VSIl0sImhvdGVsSWQiOiJjbXR0bGo2dHIwMDAwenFraGx5aTVyaW41Iiwic2lkIjoiY210eDV5N29mMDA0cnpxbmlxZm51emRwZiIsImlhdCI6MTc4OTE0MzY3NiwiZXhwIjoxNzg5MTQ0NTc2LCJhdWQiOiJzdGF5c3BoZXJlLmFwaSIsImlzcyI6InN0YXlzcGhlcmUuYXV0aCJ9.8jr9C4GzYOb-2Bta0ouFsuofsJAVF74OHBr0zvKPCTU%22%2C%22refreshToken%22%3A%22J2D7S9XnJ4-BgdU2pjV6TKBVkWIwHd6_LunXadEndQEsvBg0-yiPPb09VcaG2iEe%22%2C%22accessTokenExpiresAt%22%3A%222026-09-11T16%3A36%3A15.999Z%22%7D",
+      "domain": "127.0.0.1",
+      "path": "/",
+      "expires": 1791735676.611794,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": []
+}
