@@ -4,11 +4,20 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { cn } from '@staysphere/ui';
-import type { StaffSession } from '@/lib/session';
+import type { Role } from '@staysphere/contracts';
 import type { Workspace } from '@/lib/roles';
 
+export interface StaffSessionView {
+  readonly id: string;
+  readonly name: string;
+  readonly initials: string;
+  readonly roles: readonly Role[];
+  readonly hotelId: string;
+  readonly hotelName: string;
+}
+
 export interface AppShellProps {
-  readonly session: StaffSession;
+  readonly session: StaffSessionView;
   readonly workspaces: readonly Workspace[];
   /** Unread count for the alert badge; delivered over the real-time channel. */
   readonly unreadCount?: number;
@@ -43,9 +52,6 @@ export function AppShell({ session, workspaces, unreadCount = 0, children }: App
           </div>
 
           <div className="flex shrink-0 items-center gap-3">
-            <span className="border-line text-ink-500 hidden rounded-md border px-2 py-0.5 text-xs sm:block">
-              Shift {session.shift}
-            </span>
             <Link
               href="/notifications"
               aria-label={
