@@ -1,0 +1,29 @@
+# Ownership map. Every path has an owner so a review request is never ambiguous.
+# Later matches win, so the specific rules below override the catch-all.
+
+*                                   @NadeeshaMedagama
+
+# --- Platform contracts -------------------------------------------------------
+# A change here alters the wire format between services; it is the highest-blast-
+# radius directory in the repository.
+/packages/contracts/                @NadeeshaMedagama
+/packages/service-core/             @NadeeshaMedagama
+
+# --- Services -----------------------------------------------------------------
+/services/api-gateway/              @NadeeshaMedagama
+/services/auth-service/             @NadeeshaMedagama
+/services/booking-service/          @NadeeshaMedagama
+
+# --- Front ends ---------------------------------------------------------------
+/apps/web/                          @NadeeshaMedagama
+/apps/admin/                        @NadeeshaMedagama
+
+# --- Anything that can deploy, publish or grant access ------------------------
+/.github/workflows/                 @NadeeshaMedagama
+/.github/actions/                   @NadeeshaMedagama
+/action.yml                         @NadeeshaMedagama
+/infrastructure/                    @NadeeshaMedagama
+
+# --- Database schemas ---------------------------------------------------------
+# Migrations are one-way in production; they get their own review.
+/services/*/prisma/                 @NadeeshaMedagama
