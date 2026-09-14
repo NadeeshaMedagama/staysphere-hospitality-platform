@@ -1,0 +1,481 @@
+###############################################################################
+# StaySphere — local development stack.
+#
+# Brings up the infrastructure the platform depends on (Postgres, Redis, Kafka,
+# MailHog, Prometheus, Grafana) plus the three implemented services.
+#
+#   pnpm docker:up      start everything
+#   pnpm docker:logs    follow logs
+#   pnpm docker:down    stop and remove
+#
+# Host ports for Postgres, Redis and Kafka are overridable, because a machine
+# with a native Postgres on 5432 would otherwise win the bind and every service
+# would quietly talk to the wrong database:
+#
+#   POSTGRES_PORT=55432 pnpm docker:up
+#
+# Production deploys do NOT use this file: the frontends go to Vercel and the
+# services run from the published images.
+###############################################################################
+
+name: staysphere
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks: [staysphere]
+  environment: &common-env
+    NODE_ENV: development
+    LOG_LEVEL: debug
+    KAFKA_BROKERS: kafka:9092
+    REDIS_URL: redis://redis:6379
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  # ---------------------------------------------------------------- data ----
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: staysphere
+      POSTGRES_PASSWORD: staysphere_dev_password
+      # One cluster, one database per service — the logical isolation of
+      # database-per-service without running five containers locally.
+      POSTGRES_MULTIPLE_DATABASES: staysphere_auth,staysphere_booking,staysphere_hotel,staysphere_room,staysphere_pricing,staysphere_payment,staysphere_stay,staysphere_finance,staysphere_housekeeping,staysphere_maintenance,staysphere_notification,staysphere_review,staysphere_reporting,staysphere_audit
+    ports: ["${POSTGRES_PORT:-5432}:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U staysphere"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [staysphere]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--maxmemory",
+        "256mb",
+        "--maxmemory-policy",
+        "allkeys-lru",
+      ]
+    ports: ["${REDIS_PORT:-6379}:6379"]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [staysphere]
+    restart: unless-stopped
+
+  kafka:
+    image: bitnami/kafka:3.9
+    ports: ["${KAFKA_PORT:-9092}:9092"]
+    environment:
+      # KRaft mode — no ZooKeeper.
+      KAFKA_CFG_NODE_ID: "1"
+      KAFKA_CFG_PROCESS_ROLES: broker,controller
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes: [kafka-data:/bitnami/kafka]
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks: [staysphere]
+    restart: unless-stopped
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports: ["8080:8080"]
+    environment:
+      KAFKA_CLUSTERS_0_NAME: staysphere-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      DYNAMIC_CONFIG_ENABLED: "true"
+    depends_on:
+      kafka: { condition: service_healthy }
+    networks: [staysphere]
+    restart: unless-stopped
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports: ["1025:1025", "8025:8025"]
+    networks: [staysphere]
+    restart: unless-stopped
+
+  # ------------------------------------------------------------ services ----
+  auth-service:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args: { SERVICE: auth-service }
+    ports: ["3001:3000"]
+    environment:
+      <<: *common-env
+      SERVICE_NAME: auth-service
+      DATABASE_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_auth
+      DIRECT_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_auth
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me-in-production-32
+      JWT_REFRESH_SECRET: dev-only-refresh-secret-change-me-in-production-32
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  booking-service:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args: { SERVICE: booking-service }
+    ports: ["3002:3000"]
+    environment:
+      <<: *common-env
+      SERVICE_NAME: booking-service
+      DATABASE_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_booking
+      DIRECT_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_booking
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me-in-production-32
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  hotel-service:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args: { SERVICE: hotel-service }
+    ports: ["3003:3000"]
+    environment:
+      <<: *common-env
+      SERVICE_NAME: hotel-service
+      DATABASE_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_hotel
+      DIRECT_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_hotel
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me-in-production-32
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  room-service:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args: { SERVICE: room-service }
+    ports: ["3004:3000"]
+    environment:
+      <<: *common-env
+      SERVICE_NAME: room-service
+      DATABASE_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_room
+      DIRECT_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_room
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me-in-production-32
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  pricing-service:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args: { SERVICE: pricing-service }
+    ports: ["3005:3000"]
+    environment:
+      <<: *common-env
+      SERVICE_NAME: pricing-service
+      DATABASE_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_pricing
+      DIRECT_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_pricing
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me-in-production-32
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  payment-service:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args: { SERVICE: payment-service }
+    ports: ["3006:3000"]
+    environment:
+      <<: *common-env
+      SERVICE_NAME: payment-service
+      DATABASE_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_payment
+      DIRECT_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_payment
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me-in-production-32
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  stay-service:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args: { SERVICE: stay-service }
+    ports: ["3007:3000"]
+    environment:
+      <<: *common-env
+      SERVICE_NAME: stay-service
+      DATABASE_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_stay
+      DIRECT_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_stay
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me-in-production-32
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  finance-service:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args: { SERVICE: finance-service }
+    ports: ["3008:3000"]
+    environment:
+      <<: *common-env
+      SERVICE_NAME: finance-service
+      DATABASE_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_finance
+      DIRECT_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_finance
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me-in-production-32
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  housekeeping-service:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args: { SERVICE: housekeeping-service }
+    ports: ["3009:3000"]
+    environment:
+      <<: *common-env
+      SERVICE_NAME: housekeeping-service
+      DATABASE_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_housekeeping
+      DIRECT_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_housekeeping
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me-in-production-32
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  maintenance-service:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args: { SERVICE: maintenance-service }
+    ports: ["3010:3000"]
+    environment:
+      <<: *common-env
+      SERVICE_NAME: maintenance-service
+      DATABASE_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_maintenance
+      DIRECT_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_maintenance
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me-in-production-32
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  notification-service:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args: { SERVICE: notification-service }
+    ports: ["3011:3000"]
+    environment:
+      <<: *common-env
+      SERVICE_NAME: notification-service
+      DATABASE_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_notification
+      DIRECT_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_notification
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me-in-production-32
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  review-service:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args: { SERVICE: review-service }
+    ports: ["3012:3000"]
+    environment:
+      <<: *common-env
+      SERVICE_NAME: review-service
+      DATABASE_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_review
+      DIRECT_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_review
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me-in-production-32
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  reporting-service:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args: { SERVICE: reporting-service }
+    ports: ["3013:3000"]
+    environment:
+      <<: *common-env
+      SERVICE_NAME: reporting-service
+      DATABASE_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_reporting
+      DIRECT_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_reporting
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me-in-production-32
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  audit-service:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args: { SERVICE: audit-service }
+    ports: ["3014:3000"]
+    environment:
+      <<: *common-env
+      SERVICE_NAME: audit-service
+      DATABASE_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_audit
+      DIRECT_URL: postgresql://staysphere:staysphere_dev_password@postgres:5432/staysphere_audit
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me-in-production-32
+    depends_on:
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+
+  api-gateway:
+    <<: *service-defaults
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.service
+      args: { SERVICE: api-gateway }
+    ports: ["3000:3000"]
+    environment:
+      <<: *common-env
+      SERVICE_NAME: api-gateway
+      AUTH_SERVICE_URL: http://auth-service:3000
+      BOOKING_SERVICE_URL: http://booking-service:3000
+      HOTEL_SERVICE_URL: http://hotel-service:3000
+      ROOM_SERVICE_URL: http://room-service:3000
+      PRICING_SERVICE_URL: http://pricing-service:3000
+      PAYMENT_SERVICE_URL: http://payment-service:3000
+      STAY_SERVICE_URL: http://stay-service:3000
+      FINANCE_SERVICE_URL: http://finance-service:3000
+      HOUSEKEEPING_SERVICE_URL: http://housekeeping-service:3000
+      MAINTENANCE_SERVICE_URL: http://maintenance-service:3000
+      NOTIFICATION_SERVICE_URL: http://notification-service:3000
+      REVIEW_SERVICE_URL: http://review-service:3000
+      REPORTING_SERVICE_URL: http://reporting-service:3000
+      AUDIT_SERVICE_URL: http://audit-service:3000
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me-in-production-32
+      CORS_ORIGINS: http://localhost:3100,http://localhost:3200,http://localhost:3300
+    depends_on:
+      auth-service: { condition: service_started }
+      booking-service: { condition: service_started }
+
+  # ---------------------------------------------------------- front ends ----
+  web:
+    restart: unless-stopped
+    networks: [staysphere]
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.web
+      args: { APP: web }
+    ports: ["3100:3000"]
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://localhost:3000/api/v1
+    depends_on:
+      api-gateway: { condition: service_started }
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  admin:
+    restart: unless-stopped
+    networks: [staysphere]
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.web
+      args: { APP: admin }
+    ports: ["3200:3000"]
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://localhost:3000/api/v1
+    depends_on:
+      api-gateway: { condition: service_started }
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  staff:
+    restart: unless-stopped
+    networks: [staysphere]
+    build:
+      context: ../..
+      dockerfile: infrastructure/docker/Dockerfile.web
+      args: { APP: staff }
+    ports: ["3300:3000"]
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: http://localhost:3000/api/v1
+    depends_on:
+      api-gateway: { condition: service_started }
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # ------------------------------------------------------- observability ----
+  prometheus:
+    image: prom/prometheus:latest
+    ports: ["9090:9090"]
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+    networks: [staysphere]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports: ["${GRAFANA_PORT:-3301}:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: staysphere
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ../monitoring/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    depends_on: [prometheus]
+    networks: [staysphere]
+    restart: unless-stopped
+
+networks:
+  staysphere:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  kafka-data:
+  prometheus-data:
+  grafana-data:
