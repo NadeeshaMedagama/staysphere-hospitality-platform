@@ -1,0 +1,66 @@
+# syntax=docker/dockerfile:1.10
+###############################################################################
+# StaySphere — Next.js application image.
+#
+# Used for self-hosted/Kubernetes deployments. The Vercel pipeline builds from
+# source instead and never consumes this image.
+###############################################################################
+
+ARG NODE_VERSION=22.13.0
+ARG ALPINE_VERSION=3.21
+
+FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION} AS deps
+ARG APP
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable && apk add --no-cache libc6-compat
+WORKDIR /repo
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
+COPY packages/contracts/package.json          packages/contracts/
+COPY packages/eslint-config/package.json      packages/eslint-config/
+COPY packages/typescript-config/package.json  packages/typescript-config/
+COPY packages/ui/package.json                 packages/ui/
+COPY apps/web/package.json                    apps/web/
+COPY apps/admin/package.json                  apps/admin/
+COPY apps/staff/package.json                  apps/staff/
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile --ignore-scripts
+
+FROM deps AS build
+ARG APP
+WORKDIR /repo
+COPY . .
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN pnpm --filter "./packages/contracts" run build \
+ && pnpm --filter "./apps/${APP}" run build
+
+FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION} AS runtime
+ARG APP
+ARG VERSION=0.0.0-dev
+ARG VCS_REF=unknown
+
+LABEL org.opencontainers.image.title="staysphere-${APP}" \
+      org.opencontainers.image.source="https://github.com/NadeeshaMedagama/StaySphere" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}"
+
+RUN apk add --no-cache tini \
+ && addgroup -g 1001 -S nodejs \
+ && adduser -u 1001 -S nextjs -G nodejs
+WORKDIR /app
+
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
+
+# Next.js `output: 'standalone'` emits a minimal server plus only the modules it
+# actually imports — a fraction of a full node_modules tree.
+COPY --from=build --chown=nextjs:nodejs /repo/apps/${APP}/.next/standalone ./
+COPY --from=build --chown=nextjs:nodejs /repo/apps/${APP}/.next/static ./apps/${APP}/.next/static
+COPY --from=build --chown=nextjs:nodejs /repo/apps/${APP}/public ./apps/${APP}/public
+
+USER nextjs
+EXPOSE 3000
+ENTRYPOINT ["/sbin/tini", "--"]
+HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "apps/${APP}/server.js"]
