@@ -1,0 +1,102 @@
+# syntax=docker/dockerfile:1.10
+###############################################################################
+# StaySphere — shared multi-stage build for every NestJS microservice.
+#
+# One Dockerfile serves all services; the target is selected with
+# --build-arg SERVICE=<workspace-dir>. `pnpm deploy` prunes the workspace to
+# just that service and its transitive workspace dependencies, so the booking
+# image does not ship the auth service's code.
+###############################################################################
+
+ARG NODE_VERSION=22.13.0
+ARG ALPINE_VERSION=3.21
+
+# ---------------------------------------------------------------------------
+# Stage 1 — resolve the workspace and install every dependency (cached).
+# ---------------------------------------------------------------------------
+FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION} AS deps
+ARG SERVICE
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable && apk add --no-cache libc6-compat openssl
+
+WORKDIR /repo
+
+# Copy only manifests first: the dependency layer is then reused whenever
+# application source changes but the dependency graph does not.
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
+COPY packages/contracts/package.json          packages/contracts/
+COPY packages/service-core/package.json       packages/service-core/
+COPY packages/eslint-config/package.json      packages/eslint-config/
+COPY packages/typescript-config/package.json  packages/typescript-config/
+COPY services/api-gateway/package.json        services/api-gateway/
+COPY services/auth-service/package.json       services/auth-service/
+COPY services/booking-service/package.json    services/booking-service/
+
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile --ignore-scripts
+
+# ---------------------------------------------------------------------------
+# Stage 2 — build the requested service and prune to a deployable bundle.
+# ---------------------------------------------------------------------------
+FROM deps AS build
+ARG SERVICE
+WORKDIR /repo
+COPY . .
+
+# Prisma clients are generated per service into src/generated/prisma.
+RUN if [ -f "services/${SERVICE}/prisma/schema.prisma" ]; then \
+      pnpm --filter "./services/${SERVICE}" exec prisma generate; \
+    fi
+
+RUN pnpm --filter "./packages/contracts" run build \
+ && pnpm --filter "./packages/service-core" run build \
+ && pnpm --filter "./services/${SERVICE}" run build
+
+# `pnpm deploy` produces a self-contained node_modules with workspace deps
+# materialised as real directories rather than symlinks.
+RUN pnpm --filter "./services/${SERVICE}" deploy --prod --legacy /bundle \
+ && cp -r "services/${SERVICE}/dist" /bundle/dist \
+ && if [ -d "services/${SERVICE}/prisma" ]; then cp -r "services/${SERVICE}/prisma" /bundle/prisma; fi
+
+# ---------------------------------------------------------------------------
+# Stage 3 — minimal runtime.
+# ---------------------------------------------------------------------------
+FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION} AS runtime
+ARG SERVICE
+ARG VERSION=0.0.0-dev
+ARG VCS_REF=unknown
+ARG BUILD_DATE
+
+LABEL org.opencontainers.image.title="staysphere-${SERVICE}" \
+      org.opencontainers.image.description="StaySphere ${SERVICE}" \
+      org.opencontainers.image.source="https://github.com/NadeeshaMedagama/StaySphere" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
+
+RUN apk add --no-cache openssl tini \
+ && addgroup -g 1001 -S staysphere \
+ && adduser -u 1001 -S staysphere -G staysphere
+
+WORKDIR /app
+COPY --from=build --chown=staysphere:staysphere /bundle ./
+
+ENV NODE_ENV=production \
+    SERVICE_NAME=${SERVICE} \
+    SERVICE_VERSION=${VERSION} \
+    PORT=3000 \
+    NODE_OPTIONS="--enable-source-maps"
+
+# Run unprivileged: a container escape should not start from root.
+USER staysphere
+EXPOSE 3000
+
+# tini reaps zombies and forwards SIGTERM so Nest's shutdown hooks actually run.
+ENTRYPOINT ["/sbin/tini", "--"]
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+CMD ["node", "dist/main.js"]
