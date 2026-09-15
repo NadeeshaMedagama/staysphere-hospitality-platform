@@ -1,0 +1,62 @@
+name: ✨ Feature request
+description: Propose a capability the platform does not have yet.
+title: "feat: "
+labels: [enhancement, needs-triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >-
+        Describe the situation this makes worse today. Start from the operational
+        problem, not the solution.
+      placeholder: >-
+        Housekeeping cannot see which rooms have a late checkout, so they clean
+        in the wrong order and guests wait.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which part of the platform?
+      multiple: true
+      options:
+        - api-gateway
+        - auth-service
+        - booking-service
+        - A new service
+        - apps/web (guest site)
+        - apps/admin (operations console)
+        - packages/contracts
+        - CI / CD
+    validations:
+      required: true
+
+  - type: dropdown
+    id: role
+    attributes:
+      label: Who benefits?
+      multiple: true
+      options: [Guest, Receptionist, Housekeeping, Maintenance, Finance, Manager, Administrator]
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Including doing nothing — what makes that unacceptable?
+
+  - type: textarea
+    id: contracts
+    attributes:
+      label: Contract impact
+      description: >-
+        Would this need a new domain event, a payload change, or a new
+        permission? Note it here so the blast radius is visible during triage.
