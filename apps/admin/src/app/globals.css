@@ -1,0 +1,6 @@
+@import 'tailwindcss';
+@import '@staysphere/ui/styles.css';
+
+/* Scan the shared component sources so a utility used only inside
+   @staysphere/ui is still generated for this application. */
+@source '../../../../packages/ui/src';
