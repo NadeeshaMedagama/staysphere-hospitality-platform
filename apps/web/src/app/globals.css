@@ -1,0 +1,51 @@
+@import 'tailwindcss';
+
+/*
+ * StaySphere design tokens.
+ * Defined once here and consumed through Tailwind utilities so the guest site
+ * and the operations console stay visually consistent.
+ */
+@theme {
+  --color-sand-50: #fbf9f6;
+  --color-sand-100: #f4efe8;
+  --color-sand-200: #e8dfd2;
+  --color-sand-300: #d6c7b2;
+
+  --color-ink-500: #6b6862;
+  --color-ink-700: #3a3835;
+  --color-ink-900: #1c1b19;
+
+  --color-brand-50: #eef5f4;
+  --color-brand-100: #d3e6e3;
+  --color-brand-400: #4a8f86;
+  --color-brand-500: #35756d;
+  --color-brand-600: #285c56;
+  --color-brand-700: #1e4642;
+
+  --color-accent-400: #c9a227;
+  --color-accent-500: #ad8a1c;
+
+  --font-display: 'Georgia', 'Times New Roman', serif;
+
+  --radius-card: 0.875rem;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-sand-50);
+  color: var(--color-ink-900);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Visible focus for keyboard users, suppressed for pointer interaction. */
+:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+}
