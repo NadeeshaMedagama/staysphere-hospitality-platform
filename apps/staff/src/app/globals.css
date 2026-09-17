@@ -1,0 +1,9 @@
+@import 'tailwindcss';
+@import '@staysphere/ui/styles.css';
+
+/*
+ * The staff app adds nothing to the design system beyond scanning the shared
+ * component sources, so a utility used only inside @staysphere/ui is still
+ * generated here.
+ */
+@source '../../../../packages/ui/src';
