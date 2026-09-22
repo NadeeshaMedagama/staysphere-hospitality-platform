@@ -1,0 +1,55 @@
+# Runs Prisma migrations before a release is rolled out.
+#
+# A Job rather than an init container: an init container would run the same
+# migration once per replica, and concurrent `migrate deploy` invocations
+# contend on the advisory lock. One Job, once, then the Deployment updates.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate-SERVICE_NAME-IMAGE_TAG
+  namespace: staysphere
+  labels:
+    app.kubernetes.io/name: SERVICE_NAME
+    app.kubernetes.io/component: migration
+spec:
+  backoffLimit: 2
+  # Clean up an hour after completion so the namespace does not fill with
+  # finished Jobs.
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: SERVICE_NAME
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: ghcr.io/OWNER/staysphere-SERVICE_NAME:IMAGE_TAG
+          command: ["node_modules/.bin/prisma", "migrate", "deploy"]
+          envFrom:
+            - configMapRef:
+                name: staysphere-config
+            - secretRef:
+                name: staysphere-secrets
+          env:
+            # Prisma Migrate needs the direct endpoint; the pooler does not
+            # forward the advisory locks it takes.
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: staysphere-secrets
+                  key: DIRECT_URL
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
