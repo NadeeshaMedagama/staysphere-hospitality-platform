@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: staysphere-staging
+
+resources:
+  - ../../base
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: staysphere-config
+    patch: |-
+      - op: replace
+        path: /data/LOG_LEVEL
+        value: debug
+      - op: replace
+        path: /data/RATE_LIMIT_MAX
+        value: '1000'
+  - target:
+      kind: Namespace
+      name: staysphere
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: staysphere-staging
