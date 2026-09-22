@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: staysphere
+
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: staysphere
+      app.kubernetes.io/managed-by: kustomize
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - network-policy.yaml
+  - ingress.yaml
+
+# service-template.yaml and migration-job.yaml are not listed: they are
+# per-service templates the deploy pipeline substitutes and applies, not
+# resources to apply directly.
