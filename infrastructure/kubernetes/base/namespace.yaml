@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: staysphere
+  labels:
+    app.kubernetes.io/part-of: staysphere
+    # Enforce the restricted Pod Security Standard: no privileged containers,
+    # no host namespaces, no running as root.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
