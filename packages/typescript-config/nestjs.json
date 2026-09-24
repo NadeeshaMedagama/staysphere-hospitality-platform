@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "StaySphere NestJS Service",
+  "extends": "./base.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "isolatedModules": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "strictPropertyInitialization": false,
+    "noUncheckedIndexedAccess": false
+
+    // No "tsBuildInfoFile" or "baseUrl" here on purpose. TypeScript resolves
+    // relative paths in an extended config against the file that *declares*
+    // them, not the one extending it, so "./dist/.tsbuildinfo" written here
+    // would point every service at this package's directory and make all of
+    // them share a single incremental state file.
+    //
+    // Each service sets "tsBuildInfoFile": "./dist/.tsbuildinfo" in its own
+    // tsconfig instead. Keeping it inside dist matters: nest-cli runs with
+    // "deleteOutDir": true, and a buildinfo that outlives the output it
+    // describes makes TypeScript report "Found 0 errors" while emitting
+    // nothing, so `nest start` then crashes on a missing dist/main.js.
+  }
+}
