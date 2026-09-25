@@ -1,0 +1,23 @@
+{
+  "name": "@staysphere/e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "End-to-end tests covering the guest booking journey and the staff workspaces.",
+  "scripts": {
+    "clean": "rimraf .turbo playwright-report test-results",
+    "lint": "eslint tests",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "install-browsers": "playwright install --with-deps chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1",
+    "@staysphere/eslint-config": "workspace:*",
+    "@staysphere/typescript-config": "workspace:*",
+    "@types/node": "^22.10.5",
+    "eslint": "^9.17.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.7.3"
+  }
+}
