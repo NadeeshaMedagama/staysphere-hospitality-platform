@@ -1,0 +1,69 @@
+{
+  "name": "staysphere",
+  "version": "1.0.0",
+  "private": true,
+  "description": "StaySphere — an event-driven Hotel Operations & Reservation Platform built on microservices.",
+  "license": "MIT",
+  "author": "NadeeshaMedagama",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NadeeshaMedagama/StaySphere.git"
+  },
+  "bugs": {
+    "url": "https://github.com/NadeeshaMedagama/StaySphere/issues"
+  },
+  "homepage": "https://github.com/NadeeshaMedagama/StaySphere#readme",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20.11.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "check:wiring": "node scripts/check-service-wiring.mjs",
+    "clean": "turbo run clean && rimraf node_modules .turbo",
+    "db:generate": "turbo run db:generate",
+    "db:migrate": "turbo run db:migrate",
+    "db:seed": "node scripts/seed-local.mjs",
+    "dev": "turbo run dev",
+    "docker:down": "docker compose -f infrastructure/docker/docker-compose.yml down",
+    "docker:logs": "docker compose -f infrastructure/docker/docker-compose.yml logs -f",
+    "docker:up": "docker compose -f infrastructure/docker/docker-compose.yml up -d",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint -- --fix",
+    "postman:build": "node scripts/build-postman.mjs",
+    "postman:run": "newman run postman/StaySphere.postman_collection.json -e postman/StaySphere.local.postman_environment.json --delay-request 650 --color on",
+    "prepare": "husky || true",
+    "setup:local": "node scripts/setup-local.mjs",
+    "smoke": "node scripts/smoke-local.mjs",
+    "test": "turbo run test",
+    "test:cov": "turbo run test:cov",
+    "test:e2e": "turbo run test:e2e",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.6.1",
+    "@commitlint/config-conventional": "^19.6.0",
+    "@types/node": "^22.10.5",
+    "dotenv-cli": "^7.4.4",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.3.0",
+    "newman": "^6.2.1",
+    "pg": "^8.13.1",
+    "prettier": "^3.4.2",
+    "prettier-plugin-tailwindcss": "^0.6.9",
+    "rimraf": "^6.0.1",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.3"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
+}
