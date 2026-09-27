@@ -24,7 +24,7 @@
     "@staysphere/eslint-config": "workspace:*",
     "@staysphere/typescript-config": "workspace:*",
     "@tailwindcss/postcss": "^4.0.0",
-    "@types/node": "^22.10.5",
+    "@types/node": "^22.20.4",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
     "eslint": "^9.17.0",
