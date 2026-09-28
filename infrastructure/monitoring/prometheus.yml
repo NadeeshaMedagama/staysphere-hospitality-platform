@@ -1,0 +1,41 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    platform: staysphere
+    environment: local
+
+scrape_configs:
+  - job_name: staysphere-services
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api-gateway:3000"]
+        labels: { service: api-gateway }
+      - targets: ["auth-service:3000"]
+        labels: { service: auth-service }
+      - targets: ["booking-service:3000"]
+        labels: { service: booking-service }
+      - targets: ["hotel-service:3000"]
+        labels: { service: hotel-service }
+      - targets: ["room-service:3000"]
+        labels: { service: room-service }
+      - targets: ["pricing-service:3000"]
+        labels: { service: pricing-service }
+      - targets: ["payment-service:3000"]
+        labels: { service: payment-service }
+      - targets: ["stay-service:3000"]
+        labels: { service: stay-service }
+      - targets: ["finance-service:3000"]
+        labels: { service: finance-service }
+      - targets: ["housekeeping-service:3000"]
+        labels: { service: housekeeping-service }
+      - targets: ["maintenance-service:3000"]
+        labels: { service: maintenance-service }
+      - targets: ["notification-service:3000"]
+        labels: { service: notification-service }
+      - targets: ["review-service:3000"]
+        labels: { service: review-service }
+      - targets: ["reporting-service:3000"]
+        labels: { service: reporting-service }
+      - targets: ["audit-service:3000"]
+        labels: { service: audit-service }
