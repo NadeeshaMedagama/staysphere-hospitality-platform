@@ -1,0 +1,65 @@
+// StaySphere — Audit trail.
+// Owned exclusively by audit-service.
+//
+// Append-only by design. There is no update or delete path anywhere in this
+// service: an audit log that can be edited is not an audit log.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model AuditEntry {
+  id String @id @default(cuid())
+
+  /// Who. Null for a change made by the platform itself.
+  actorId    String?
+  actorEmail String?
+  actorRoles String[] @default([])
+  actorType  String   @default("USER")
+
+  /// What.
+  action     String
+  resource   String
+  resourceId String?
+  hotelId    String?
+
+  /// Field-level before and after, already redacted.
+  changes Json @default("[]")
+
+  /// Where from.
+  ipAddress String?
+  userAgent String?
+
+  /// Ties the entry to the request and the wider interaction.
+  requestId     String?
+  correlationId String?
+
+  /// Set when the action was rejected, e.g. a forbidden attempt worth recording.
+  outcome      String  @default("SUCCESS")
+  failureCode  String?
+
+  metadata Json @default("{}")
+
+  occurredAt DateTime @default(now())
+
+  @@index([actorId, occurredAt])
+  @@index([resource, resourceId, occurredAt])
+  @@index([hotelId, occurredAt])
+  @@index([correlationId])
+  @@map("audit_entries")
+}
+
+model ProcessedEvent {
+  eventId       String   @id
+  consumerGroup String
+  processedAt   DateTime @default(now())
+
+  @@map("processed_events")
+}
