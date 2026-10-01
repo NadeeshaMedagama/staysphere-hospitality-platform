@@ -1,0 +1,104 @@
+// StaySphere — Guest reviews.
+// Owned exclusively by review-service.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum ReviewStatus {
+  PENDING_MODERATION
+  PUBLISHED
+  REJECTED
+  HIDDEN
+}
+
+model Review {
+  id      String @id @default(cuid())
+  hotelId String
+
+  /// One review per stay. A review without a stay is not a review — it is an
+  /// opinion, and the unique index is what keeps the ratings honest.
+  stayId     String @unique
+  bookingId  String
+  customerId String
+
+  displayName String
+  roomTypeId  String?
+
+  /// Per-category scores, 1–5.
+  scores        Json
+  overallRating Decimal @db.Decimal(2, 1)
+
+  title   String?
+  comment String?
+  photos  Json    @default("[]")
+
+  status ReviewStatus @default(PENDING_MODERATION)
+  /// Why moderation rejected or held the review.
+  moderationReason String?
+  moderatedById    String?
+  moderatedAt      DateTime?
+
+  /// The property's public reply.
+  responseBody     String?
+  responseById     String?
+  respondedAt      DateTime?
+
+  /// Confirms the reviewer actually stayed — always true here, since a review
+  /// requires a stay, but explicit for the public payload.
+  verifiedStay Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([hotelId, status, createdAt])
+  @@index([customerId, createdAt])
+  @@map("reviews")
+}
+
+/// Rolling aggregate per property, recomputed when a review is published or
+/// hidden. Kept as a table so the public listing never aggregates on read.
+model HotelRating {
+  hotelId String @id
+
+  reviewCount   Int     @default(0)
+  overallRating Decimal @db.Decimal(2, 1) @default(0)
+  /// Mean per category, same shape as Review.scores.
+  categoryAverages Json @default("{}")
+  /// Count per star value, for the 1–5 distribution bar.
+  distribution     Json @default("{}")
+
+  updatedAt DateTime @updatedAt
+
+  @@map("hotel_ratings")
+}
+
+model OutboxEvent {
+  id           String    @id @default(cuid())
+  topic        String
+  partitionKey String
+  eventType    String
+  payload      Json
+  createdAt    DateTime  @default(now())
+  publishedAt  DateTime?
+  attempts     Int       @default(0)
+  lastError    String?
+
+  @@index([publishedAt, createdAt])
+  @@map("outbox_events")
+}
+
+model ProcessedEvent {
+  eventId       String   @id
+  consumerGroup String
+  processedAt   DateTime @default(now())
+
+  @@map("processed_events")
+}
