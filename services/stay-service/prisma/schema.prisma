@@ -1,0 +1,166 @@
+// StaySphere — Stays, folios and in-stay services.
+// Owned exclusively by stay-service.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum StayStatus {
+  IN_HOUSE
+  CHECKED_OUT
+  DEPARTED_UNSETTLED
+}
+
+enum ServiceRequestStatus {
+  REQUESTED
+  CONFIRMED
+  DELIVERED
+  CANCELLED
+}
+
+enum FolioLineKind {
+  ROOM
+  SERVICE
+  TAX
+  DISCOUNT
+  ADJUSTMENT
+  PAYMENT
+  REFUND
+}
+
+model Stay {
+  id        String @id @default(cuid())
+  bookingId String @unique
+  hotelId   String
+  customerId String
+
+  roomId     String
+  roomNumber String
+
+  /// Names of everyone occupying the room, for the in-house register.
+  guestNames String[] @default([])
+  adults     Int      @default(1)
+  children   Int      @default(0)
+
+  status StayStatus @default(IN_HOUSE)
+
+  checkedInAt   DateTime
+  checkedInById String
+  expectedCheckOut DateTime
+  checkedOutAt  DateTime?
+  checkedOutById String?
+
+  currency String @db.Char(3)
+
+  /// Pre-authorisation held against incidentals, released at check-out.
+  depositMinor Int @default(0)
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  folioLines      FolioLine[]
+  serviceRequests ServiceRequest[]
+
+  @@index([hotelId, status])
+  @@index([customerId, checkedInAt])
+  @@index([roomId, status])
+  @@map("stays")
+}
+
+/// One line on the guest's bill. Append-only: a correction is a new ADJUSTMENT
+/// line, never an edit, so the folio always reconciles against what was charged.
+model FolioLine {
+  id     String @id @default(cuid())
+  stayId String
+  stay   Stay   @relation(fields: [stayId], references: [id], onDelete: Cascade)
+
+  kind        FolioLineKind
+  description String
+  quantity    Int           @default(1)
+  unitPriceMinor Int
+  amountMinor    Int
+  currency       String     @db.Char(3)
+
+  /// Links a line back to whatever produced it — a service request, a payment.
+  sourceId   String?
+  postedById String?
+  postedAt   DateTime @default(now())
+
+  @@index([stayId, postedAt])
+  @@index([stayId, kind])
+  @@map("folio_lines")
+}
+
+model ServiceRequest {
+  id     String @id @default(cuid())
+  stayId String
+  stay   Stay   @relation(fields: [stayId], references: [id], onDelete: Cascade)
+
+  /// ServiceCode from @staysphere/contracts.
+  serviceCode String
+  quantity    Int    @default(1)
+  unitPriceMinor Int
+  currency       String @db.Char(3)
+
+  status       ServiceRequestStatus @default(REQUESTED)
+  scheduledFor DateTime?
+  deliveredAt  DateTime?
+  notes        String?
+
+  requestedById String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([stayId, status])
+  @@index([status, scheduledFor])
+  @@map("service_requests")
+}
+
+/// Catalogue of chargeable extras a property offers.
+model ServiceCatalogItem {
+  id      String @id @default(cuid())
+  hotelId String
+
+  code        String
+  name        String
+  description String?
+  priceMinor  Int
+  currency    String @db.Char(3)
+  taxable     Boolean @default(true)
+  available   Boolean @default(true)
+
+  @@unique([hotelId, code])
+  @@map("service_catalog")
+}
+
+model OutboxEvent {
+  id           String    @id @default(cuid())
+  topic        String
+  partitionKey String
+  eventType    String
+  payload      Json
+  createdAt    DateTime  @default(now())
+  publishedAt  DateTime?
+  attempts     Int       @default(0)
+  lastError    String?
+
+  @@index([publishedAt, createdAt])
+  @@map("outbox_events")
+}
+
+model ProcessedEvent {
+  eventId       String   @id
+  consumerGroup String
+  processedAt   DateTime @default(now())
+
+  @@map("processed_events")
+}
