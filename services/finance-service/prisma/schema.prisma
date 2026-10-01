@@ -1,0 +1,138 @@
+// StaySphere — Invoices and financial records.
+// Owned exclusively by finance-service.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  PARTIALLY_PAID
+  OVERDUE
+  VOID
+}
+
+model Invoice {
+  id String @id @default(cuid())
+
+  /// Sequential, gap-free per property per year — a legal requirement in most
+  /// jurisdictions and the reason numbers are allocated through a counter row
+  /// rather than a database sequence.
+  invoiceNumber String @unique
+
+  hotelId    String
+  stayId     String  @unique
+  bookingId  String
+  customerId String
+
+  billToName    String
+  billToEmail   String
+  billToAddress String?
+  taxNumber     String?
+
+  status   InvoiceStatus @default(DRAFT)
+  currency String        @db.Char(3)
+
+  subtotalMinor Int
+  discountMinor Int @default(0)
+  taxMinor      Int
+  totalMinor    Int
+  paidMinor     Int @default(0)
+  refundedMinor Int @default(0)
+
+  issuedAt DateTime?
+  dueAt    DateTime?
+  paidAt   DateTime?
+  voidedAt DateTime?
+  voidReason String?
+
+  /// Object-storage key for the rendered PDF.
+  documentKey String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines    InvoiceLine[]
+  taxLines InvoiceTaxLine[]
+
+  @@index([hotelId, status, issuedAt])
+  @@index([customerId, issuedAt])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id        String  @id @default(cuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  description    String
+  quantity       Int
+  unitPriceMinor Int
+  amountMinor    Int
+  taxable        Boolean @default(true)
+  sortOrder      Int     @default(0)
+
+  @@index([invoiceId, sortOrder])
+  @@map("invoice_lines")
+}
+
+model InvoiceTaxLine {
+  id        String  @id @default(cuid())
+  invoiceId String
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  code        String
+  label       String
+  basisPoints Int
+  baseMinor   Int
+  amountMinor Int
+
+  @@unique([invoiceId, code])
+  @@map("invoice_tax_lines")
+}
+
+/// Allocates gap-free invoice numbers. One row per property per year; the
+/// counter is incremented inside the invoice transaction so a rollback cannot
+/// burn a number.
+model InvoiceCounter {
+  id      String @id @default(cuid())
+  hotelId String
+  year    Int
+  prefix  String
+  next    Int    @default(1)
+
+  @@unique([hotelId, year])
+  @@map("invoice_counters")
+}
+
+model OutboxEvent {
+  id           String    @id @default(cuid())
+  topic        String
+  partitionKey String
+  eventType    String
+  payload      Json
+  createdAt    DateTime  @default(now())
+  publishedAt  DateTime?
+  attempts     Int       @default(0)
+  lastError    String?
+
+  @@index([publishedAt, createdAt])
+  @@map("outbox_events")
+}
+
+model ProcessedEvent {
+  eventId       String   @id
+  consumerGroup String
+  processedAt   DateTime @default(now())
+
+  @@map("processed_events")
+}
