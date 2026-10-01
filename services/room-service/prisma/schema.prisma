@@ -1,0 +1,138 @@
+// StaySphere — Room inventory.
+// Owned exclusively by room-service.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum RoomStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  CLEANING
+  MAINTENANCE
+  OUT_OF_SERVICE
+}
+
+enum BedType {
+  SINGLE
+  DOUBLE
+  QUEEN
+  KING
+  TWIN
+  SOFA_BED
+  BUNK
+}
+
+model RoomType {
+  id      String @id @default(cuid())
+  hotelId String
+
+  /// RoomTypeCode from @staysphere/contracts, e.g. DELUXE.
+  code        String
+  name        String
+  description String?
+
+  maxOccupancy   Int
+  maxAdults      Int
+  maxChildren    Int    @default(0)
+  sizeSquareMetres Int?
+
+  beds      Json   @default("[]")
+  amenities String[] @default([])
+  images    Json   @default("[]")
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rooms Room[]
+
+  @@unique([hotelId, code])
+  @@index([hotelId, active])
+  @@map("room_types")
+}
+
+model Room {
+  id      String @id @default(cuid())
+  hotelId String
+  branchId String?
+
+  roomNumber String
+  floor      Int
+  building   String?
+
+  roomTypeId String
+  roomType   RoomType @relation(fields: [roomTypeId], references: [id])
+
+  status RoomStatus @default(AVAILABLE)
+  /// Free-text note shown on the floor board, e.g. "AC unit awaiting parts".
+  statusNote String?
+
+  maxOccupancy Int
+  /// Overrides the room type's amenity list for this specific room.
+  amenities    String[] @default([])
+
+  /// True while the room is deliberately withheld from sale for a period.
+  blocked      Boolean  @default(false)
+  blockedUntil DateTime?
+  blockReason  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  statusHistory RoomStatusChange[]
+
+  @@unique([hotelId, roomNumber])
+  // The floor board reads by hotel and floor; availability reads by type+status.
+  @@index([hotelId, floor])
+  @@index([hotelId, roomTypeId, status])
+  @@map("rooms")
+}
+
+/// Append-only trail of operational status changes, used for housekeeping
+/// performance reporting and for answering "who took this room offline?".
+model RoomStatusChange {
+  id     String @id @default(cuid())
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  from      RoomStatus
+  to        RoomStatus
+  actorId   String?
+  reason    String?
+  createdAt DateTime   @default(now())
+
+  @@index([roomId, createdAt])
+  @@map("room_status_changes")
+}
+
+model OutboxEvent {
+  id           String    @id @default(cuid())
+  topic        String
+  partitionKey String
+  eventType    String
+  payload      Json
+  createdAt    DateTime  @default(now())
+  publishedAt  DateTime?
+  attempts     Int       @default(0)
+  lastError    String?
+
+  @@index([publishedAt, createdAt])
+  @@map("outbox_events")
+}
+
+model ProcessedEvent {
+  eventId       String   @id
+  consumerGroup String
+  processedAt   DateTime @default(now())
+
+  @@map("processed_events")
+}
