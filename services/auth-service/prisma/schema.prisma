@@ -1,0 +1,160 @@
+// StaySphere — Identity & Access datastore.
+// Owned exclusively by auth-service; no other service connects to this database.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+  // Per-service output: pnpm resolves the default path into the shared store,
+  // where a second service's `prisma generate` would overwrite the first.
+  output          = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Neon pooled connection (PgBouncer) used by the running service.
+  url       = env("DATABASE_URL")
+  // Neon direct connection — Prisma Migrate cannot run through the pooler.
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum Role {
+  SUPER_ADMIN
+  HOTEL_ADMIN
+  MANAGER
+  RECEPTIONIST
+  HOUSEKEEPING
+  MAINTENANCE
+  FINANCE
+  CUSTOMER
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  fullName     String
+  phone        String?
+  status       UserStatus @default(PENDING_VERIFICATION)
+  roles        Role[]     @default([CUSTOMER])
+
+  /// Scopes staff to a property. Null for platform-wide roles and guests.
+  hotelId String?
+
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+
+  /// Consecutive failed sign-ins; reset on success. Drives temporary lockout.
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions      Session[]
+  refreshTokens RefreshToken[]
+
+  @@index([hotelId])
+  @@index([status])
+  @@map("users")
+}
+
+model Session {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  userAgent String?
+  ipAddress String?
+
+  createdAt   DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  revokeReason String?
+
+  refreshTokens RefreshToken[]
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model RefreshToken {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  sessionId String
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  /// SHA-256 of the token. The raw token is never persisted, so a database
+  /// disclosure cannot be replayed against the API.
+  tokenHash String @unique
+
+  /// Set when this token is exchanged. A second use of a rotated token is
+  /// treated as theft and revokes the whole session.
+  rotatedAt     DateTime?
+  replacedByJti String?
+
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+/// Transactional outbox. Written inside the same transaction as the state change
+/// it describes; a relay moves rows onto Kafka afterwards.
+model OutboxEvent {
+  id           String    @id @default(cuid())
+  topic        String
+  partitionKey String
+  eventType    String
+  payload      Json
+  createdAt    DateTime  @default(now())
+  publishedAt  DateTime?
+  attempts     Int       @default(0)
+  lastError    String?
+
+  @@index([publishedAt, createdAt])
+  @@map("outbox_events")
+}
+
+/// Append-only trail of security-relevant actions.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  resource   String
+  resourceId String?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([resource, resourceId])
+  @@map("audit_logs")
+}
