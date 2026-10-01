@@ -1,0 +1,108 @@
+// StaySphere — Notifications.
+// Owned exclusively by notification-service.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Channel {
+  EMAIL
+  SMS
+  PUSH
+  IN_APP
+}
+
+enum DeliveryStatus {
+  QUEUED
+  SENDING
+  SENT
+  DELIVERED
+  FAILED
+  SUPPRESSED
+}
+
+model NotificationTemplate {
+  id      String  @id @default(cuid())
+  /// TemplateKey from @staysphere/contracts.
+  key     String
+  channel Channel
+  locale  String  @default("en")
+
+  subject  String?
+  /// Handlebars-style {{token}} body.
+  body     String
+  /// Tokens the body requires; a render missing one of these is rejected.
+  required String[] @default([])
+
+  active    Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  @@unique([key, channel, locale])
+  @@map("notification_templates")
+}
+
+model Notification {
+  id String @id @default(cuid())
+
+  recipientId String
+  /// Denormalised so a message can still be sent after an account is deleted.
+  toAddress   String
+
+  channel  Channel
+  template String
+  locale   String  @default("en")
+
+  subject String?
+  body    String
+
+  status   DeliveryStatus @default(QUEUED)
+  attempts Int            @default(0)
+
+  /// Idempotency: one message per (event, recipient, channel).
+  dedupeKey String @unique
+
+  providerMessageId String?
+  failureReason     String?
+
+  queuedAt    DateTime  @default(now())
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  readAt      DateTime?
+
+  hotelId String?
+
+  @@index([recipientId, queuedAt])
+  @@index([status, queuedAt])
+  @@index([recipientId, readAt])
+  @@map("notifications")
+}
+
+/// Per-recipient channel opt-outs. Transactional messages ignore these.
+model NotificationPreference {
+  id          String @id @default(cuid())
+  recipientId String
+
+  channel  Channel
+  template String?
+  enabled  Boolean @default(true)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([recipientId, channel, template])
+  @@map("notification_preferences")
+}
+
+model ProcessedEvent {
+  eventId       String   @id
+  consumerGroup String
+  processedAt   DateTime @default(now())
+
+  @@map("processed_events")
+}
