@@ -1,0 +1,136 @@
+// StaySphere — Engineering and maintenance.
+// Owned exclusively by maintenance-service.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum TicketStatus {
+  REPORTED
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model MaintenanceTicket {
+  id      String @id @default(cuid())
+  hotelId String
+
+  /// Null for a communal-area fault with no specific room.
+  roomId     String?
+  roomNumber String?
+  location   String?
+
+  category String
+  summary  String
+  details  String?
+
+  status   TicketStatus   @default(REPORTED)
+  priority TicketPriority @default(MEDIUM)
+
+  /// True when the fault makes the room unsellable until it is fixed.
+  takesRoomOffline Boolean @default(false)
+
+  /// Deadline derived from priority; drives the overdue board.
+  dueAt      DateTime?
+  escalatedAt DateTime?
+
+  reportedById   String
+  reportedByRole String?
+  assignedToId   String?
+  assignedToName String?
+  assignedAt     DateTime?
+
+  startedAt  DateTime?
+  resolvedAt DateTime?
+  resolvedById String?
+  resolutionNotes String?
+  closedAt   DateTime?
+
+  /// Parts and labour, for the maintenance cost report.
+  costMinor Int     @default(0)
+  currency  String? @db.Char(3)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  comments TicketComment[]
+
+  @@index([hotelId, status, priority])
+  @@index([assignedToId, status])
+  @@index([roomId, status])
+  @@index([dueAt, status])
+  @@map("maintenance_tickets")
+}
+
+model TicketComment {
+  id       String            @id @default(cuid())
+  ticketId String
+  ticket   MaintenanceTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  authorId String
+  body     String
+  /// Internal notes are hidden from the guest-facing timeline.
+  internal Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([ticketId, createdAt])
+  @@map("ticket_comments")
+}
+
+/// Trackable equipment, so recurring faults can be attributed to an asset.
+model Asset {
+  id      String @id @default(cuid())
+  hotelId String
+
+  code         String
+  name         String
+  category     String
+  roomId       String?
+  location     String?
+  installedOn  DateTime? @db.Date
+  warrantyEnds DateTime? @db.Date
+  active       Boolean   @default(true)
+
+  @@unique([hotelId, code])
+  @@index([hotelId, category])
+  @@map("assets")
+}
+
+model OutboxEvent {
+  id           String    @id @default(cuid())
+  topic        String
+  partitionKey String
+  eventType    String
+  payload      Json
+  createdAt    DateTime  @default(now())
+  publishedAt  DateTime?
+  attempts     Int       @default(0)
+  lastError    String?
+
+  @@index([publishedAt, createdAt])
+  @@map("outbox_events")
+}
+
+model ProcessedEvent {
+  eventId       String   @id
+  consumerGroup String
+  processedAt   DateTime @default(now())
+
+  @@map("processed_events")
+}
