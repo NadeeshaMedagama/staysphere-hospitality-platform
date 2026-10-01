@@ -1,0 +1,130 @@
+// StaySphere — Property catalogue.
+// Owned exclusively by hotel-service.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum HotelStatus {
+  DRAFT
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+model Hotel {
+  id     String @id @default(cuid())
+  /// URL-safe identifier used in guest-facing links; unique platform-wide.
+  slug   String @unique
+  name   String
+  legalName String?
+  description String?
+  status HotelStatus @default(DRAFT)
+
+  /// Star rating awarded by the local tourism authority, 1–5.
+  starRating Int?
+
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  region       String?
+  postalCode   String?
+  countryCode  String  @db.Char(2)
+  latitude     Decimal? @db.Decimal(9, 6)
+  longitude    Decimal? @db.Decimal(9, 6)
+  timezone     String   @default("UTC")
+
+  email String
+  phone String
+  websiteUrl String?
+
+  /// HotelPolicy from @staysphere/contracts, stored whole so policy can evolve
+  /// without a migration per field.
+  policy Json
+
+  currency String @db.Char(3) @default("USD")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  branches  Branch[]
+  amenities HotelAmenity[]
+  images    HotelImage[]
+
+  @@index([status, city])
+  @@index([countryCode, city])
+  @@map("hotels")
+}
+
+/// A physical property under a parent brand. Inventory hangs off a branch.
+model Branch {
+  id      String @id @default(cuid())
+  hotelId String
+  hotel   Hotel  @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  code        String
+  name        String
+  addressLine1 String
+  city        String
+  countryCode String @db.Char(2)
+  phone       String?
+  active      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([hotelId, code])
+  @@index([hotelId, active])
+  @@map("branches")
+}
+
+model HotelAmenity {
+  id      String @id @default(cuid())
+  hotelId String
+  hotel   Hotel  @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  /// AmenityCode from @staysphere/contracts.
+  code    String
+  /// Set when the amenity carries a charge rather than being included.
+  chargeable Boolean @default(false)
+  notes   String?
+
+  @@unique([hotelId, code])
+  @@map("hotel_amenities")
+}
+
+model HotelImage {
+  id      String @id @default(cuid())
+  hotelId String
+  hotel   Hotel  @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  url       String
+  altText   String
+  /// Lower sorts first; the lowest is the hero image.
+  sortOrder Int    @default(0)
+  category  String @default("GENERAL")
+
+  @@index([hotelId, sortOrder])
+  @@map("hotel_images")
+}
+
+model OutboxEvent {
+  id           String    @id @default(cuid())
+  topic        String
+  partitionKey String
+  eventType    String
+  payload      Json
+  createdAt    DateTime  @default(now())
+  publishedAt  DateTime?
+  attempts     Int       @default(0)
+  lastError    String?
+
+  @@index([publishedAt, createdAt])
+  @@map("outbox_events")
+}
