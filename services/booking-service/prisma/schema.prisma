@@ -1,0 +1,207 @@
+// StaySphere — Reservations datastore.
+// Owned exclusively by booking-service.
+//
+// Room and rate rows here are *local read models* projected from the inventory
+// and pricing services' events, not foreign keys into their databases. That is
+// what keeps availability queries a single local join instead of a fan-out of
+// synchronous calls on the hottest path in the platform.
+
+generator client {
+  provider = "prisma-client-js"
+  // Per-service output: pnpm resolves the default path into the shared store,
+  // where a second service's `prisma generate` would overwrite the first.
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  COMPLETED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum BookingChannel {
+  DIRECT_WEB
+  WALK_IN
+  PHONE
+  OTA
+  CORPORATE
+}
+
+enum RoomStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  CLEANING
+  MAINTENANCE
+  OUT_OF_SERVICE
+}
+
+/// Projection of the inventory service's room catalogue.
+model RoomProjection {
+  id           String     @id
+  hotelId      String
+  roomNumber   String
+  roomTypeId   String
+  floor        Int
+  status       RoomStatus @default(AVAILABLE)
+  maxOccupancy Int
+  updatedAt    DateTime   @updatedAt
+
+  bookings Booking[]
+
+  @@unique([hotelId, roomNumber])
+  @@index([hotelId, roomTypeId, status])
+  @@map("room_projections")
+}
+
+/// Projection of the pricing service's published rate plans.
+model RatePlanProjection {
+  id                String   @id
+  hotelId           String
+  roomTypeId        String
+  currency          String   @db.Char(3)
+  baseRateMinor     Int
+  weekendMultiplier Decimal  @db.Decimal(4, 2)
+  taxBasisPoints    Int
+  seasonalRates     Json     @default("[]")
+  longStayDiscounts Json     @default("[]")
+  updatedAt         DateTime @updatedAt
+
+  @@unique([hotelId, roomTypeId])
+  @@map("rate_plan_projections")
+}
+
+model Booking {
+  id        String @id @default(cuid())
+  /// Human-quotable reference given to the guest, e.g. SS-4KD9QW.
+  reference String @unique
+
+  hotelId    String
+  customerId String
+  roomTypeId String
+
+  roomId String?
+  room   RoomProjection? @relation(fields: [roomId], references: [id])
+
+  /// Half-open interval [checkIn, checkOut). Stored at date granularity.
+  checkIn  DateTime @db.Date
+  checkOut DateTime @db.Date
+  nights   Int
+
+  adults   Int @default(1)
+  children Int @default(0)
+
+  status        BookingStatus  @default(PENDING)
+  paymentStatus PaymentStatus  @default(PENDING)
+  channel       BookingChannel @default(DIRECT_WEB)
+
+  currency      String @db.Char(3)
+  subtotalMinor Int
+  discountMinor Int    @default(0)
+  taxMinor      Int
+  totalMinor    Int
+  paidMinor     Int    @default(0)
+  refundedMinor Int    @default(0)
+
+  guestName  String
+  guestEmail String
+  guestPhone String?
+  notes      String?
+
+  promotionCode String?
+
+  /// De-duplicates a retried "create booking" request from the same client.
+  idempotencyKey String? @unique
+
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  nightlyCharges NightlyCharge[]
+  statusHistory  BookingStatusChange[]
+
+  // The hot path is "which rooms of this type are free between two dates".
+  //
+  // Overlap is additionally prevented by the `bookings_no_overlapping_stay`
+  // exclusion constraint, added in a migration because Prisma's schema language
+  // cannot express a GiST range exclusion. The application's availability check
+  // is an optimisation; that constraint is the guarantee.
+  @@index([hotelId, roomTypeId, status, checkIn, checkOut])
+  @@index([roomId, status, checkIn, checkOut])
+  @@index([customerId, createdAt])
+  @@map("bookings")
+}
+
+model NightlyCharge {
+  id        String   @id @default(cuid())
+  bookingId String
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  rateKind  String
+  label     String
+  amountMinor Int
+
+  @@unique([bookingId, date])
+  @@map("nightly_charges")
+}
+
+/// Append-only audit of every booking state transition.
+model BookingStatusChange {
+  id        String        @id @default(cuid())
+  bookingId String
+  booking   Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  from      BookingStatus
+  to        BookingStatus
+  actorId   String?
+  reason    String?
+  createdAt DateTime      @default(now())
+
+  @@index([bookingId, createdAt])
+  @@map("booking_status_changes")
+}
+
+model OutboxEvent {
+  id           String    @id @default(cuid())
+  topic        String
+  partitionKey String
+  eventType    String
+  payload      Json
+  createdAt    DateTime  @default(now())
+  publishedAt  DateTime?
+  attempts     Int       @default(0)
+  lastError    String?
+
+  @@index([publishedAt, createdAt])
+  @@map("outbox_events")
+}
+
+/// De-duplication ledger for inbound events; see `consumeOnce` in service-core.
+model ProcessedEvent {
+  eventId       String   @id
+  consumerGroup String
+  processedAt   DateTime @default(now())
+
+  @@index([processedAt])
+  @@map("processed_events")
+}
