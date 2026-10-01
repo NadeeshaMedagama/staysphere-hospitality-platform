@@ -1,0 +1,93 @@
+// StaySphere — Analytics and reporting.
+// Owned exclusively by reporting-service.
+//
+// Every table here is a projection built from domain events. Nothing in this
+// database is a source of truth; it can be dropped and rebuilt by replaying the
+// event log, which is what lets the read model be reshaped freely as the
+// questions the business asks change.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+/// One row per property per night — the grain every hotel KPI is computed at.
+model DailyPerformance {
+  id      String   @id @default(cuid())
+  hotelId String
+  date    DateTime @db.Date
+
+  /// Rooms physically available for sale that night, excluding out-of-order.
+  roomsAvailable Int @default(0)
+  roomsSold      Int @default(0)
+  roomsOutOfOrder Int @default(0)
+
+  /// Net room revenue in minor units, excluding services and tax.
+  roomRevenueMinor    Int @default(0)
+  serviceRevenueMinor Int @default(0)
+  taxMinor            Int @default(0)
+  currency            String @db.Char(3) @default("USD")
+
+  arrivals   Int @default(0)
+  departures Int @default(0)
+  cancellations Int @default(0)
+  noShows       Int @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([hotelId, date])
+  @@index([hotelId, date])
+  @@map("daily_performance")
+}
+
+/// Booking-level facts, kept for channel and lead-time analysis.
+model BookingFact {
+  id        String @id
+  hotelId   String
+  roomTypeId String
+  channel   String
+
+  createdOn  DateTime @db.Date
+  arrivalOn  DateTime @db.Date
+  nights     Int
+  leadTimeDays Int
+
+  totalMinor    Int
+  discountMinor Int    @default(0)
+  currency      String @db.Char(3)
+
+  status String
+
+  @@index([hotelId, createdOn])
+  @@index([hotelId, arrivalOn])
+  @@index([hotelId, channel, createdOn])
+  @@map("booking_facts")
+}
+
+/// Housekeeping throughput, for staffing decisions.
+model HousekeepingFact {
+  id       String   @id
+  hotelId  String
+  date     DateTime @db.Date
+  staffId  String
+  tasksCompleted Int @default(0)
+  minutesWorked  Int @default(0)
+  reworkCount    Int @default(0)
+
+  @@unique([hotelId, date, staffId])
+  @@map("housekeeping_facts")
+}
+
+model ProcessedEvent {
+  eventId       String   @id
+  consumerGroup String
+  processedAt   DateTime @default(now())
+
+  @@map("processed_events")
+}
