@@ -1,0 +1,135 @@
+// StaySphere — Housekeeping operations.
+// Owned exclusively by housekeeping-service.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum TaskStatus {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  VERIFIED
+}
+
+enum TaskType {
+  CHECKOUT_CLEAN
+  STAYOVER_CLEAN
+  DEEP_CLEAN
+  INSPECTION
+  TURNDOWN
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model HousekeepingTask {
+  id      String @id @default(cuid())
+  hotelId String
+
+  roomId     String
+  roomNumber String
+  floor      Int
+
+  type     TaskType
+  status   TaskStatus   @default(PENDING)
+  priority TaskPriority @default(MEDIUM)
+
+  /// Set when the room is needed for an arrival today; drives prioritisation.
+  nextArrivalAt DateTime?
+  dueAt         DateTime?
+
+  assignedToId   String?
+  assignedToName String?
+  assignedAt     DateTime?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  /// Minutes from start to completion, used for workload planning.
+  durationMinutes Int?
+
+  verifiedById String?
+  verifiedAt   DateTime?
+  /// Set when an inspection rejects the clean and the room goes back in the queue.
+  reworkOfId   String?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  checklist ChecklistItem[]
+
+  // The housekeeping board reads open work by property, ordered by priority.
+  @@index([hotelId, status, priority])
+  @@index([assignedToId, status])
+  @@index([roomId, createdAt])
+  @@map("housekeeping_tasks")
+}
+
+model ChecklistItem {
+  id     String           @id @default(cuid())
+  taskId String
+  task   HousekeepingTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  label     String
+  /// True when the item must pass before the task can be completed.
+  required  Boolean @default(true)
+  completed Boolean @default(false)
+  sortOrder Int     @default(0)
+
+  @@index([taskId, sortOrder])
+  @@map("checklist_items")
+}
+
+/// Per-property shift configuration used for workload planning.
+model HousekeeperShift {
+  id      String @id @default(cuid())
+  hotelId String
+
+  staffId   String
+  staffName String
+  startsAt  DateTime
+  endsAt    DateTime
+  /// Rooms this housekeeper is expected to complete in the shift.
+  capacity  Int      @default(14)
+
+  @@index([hotelId, startsAt])
+  @@unique([staffId, startsAt])
+  @@map("housekeeper_shifts")
+}
+
+model OutboxEvent {
+  id           String    @id @default(cuid())
+  topic        String
+  partitionKey String
+  eventType    String
+  payload      Json
+  createdAt    DateTime  @default(now())
+  publishedAt  DateTime?
+  attempts     Int       @default(0)
+  lastError    String?
+
+  @@index([publishedAt, createdAt])
+  @@map("outbox_events")
+}
+
+model ProcessedEvent {
+  eventId       String   @id
+  consumerGroup String
+  processedAt   DateTime @default(now())
+
+  @@map("processed_events")
+}
