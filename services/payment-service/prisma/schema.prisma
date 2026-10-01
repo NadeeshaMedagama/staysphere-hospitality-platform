@@ -1,0 +1,147 @@
+// StaySphere — Payments and refunds.
+// Owned exclusively by payment-service.
+//
+// No card number, expiry or CVV is stored anywhere in this schema. The service
+// holds only the provider's own reference and a display-safe last-four.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  COMPLETED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentProvider {
+  STRIPE
+  PAYHERE
+  PAYPAL
+  CASH
+  BANK_TRANSFER
+}
+
+enum PaymentMethod {
+  CARD
+  BANK_TRANSFER
+  CASH
+  WALLET
+}
+
+model Payment {
+  id        String @id @default(cuid())
+  bookingId String
+  stayId    String?
+  hotelId   String
+  customerId String
+
+  amountMinor   Int
+  capturedMinor Int @default(0)
+  refundedMinor Int @default(0)
+  currency      String @db.Char(3)
+
+  status   PaymentStatus   @default(PENDING)
+  provider PaymentProvider
+  method   PaymentMethod   @default(CARD)
+
+  /// The provider's identifier for this charge. Unique so a duplicate webhook
+  /// can never create a second payment row.
+  providerReference String? @unique
+  /// Display only — never a full card number.
+  cardLast4  String? @db.Char(4)
+  cardBrand  String?
+
+  /// Client-supplied key; a retried request returns the original payment rather
+  /// than charging the guest twice.
+  idempotencyKey String @unique
+
+  failureCode    String?
+  failureMessage String?
+  /// Whether a failed attempt is worth retrying (a network blip) or terminal
+  /// (a declined card).
+  retriable      Boolean @default(false)
+
+  authorizedAt DateTime?
+  capturedAt   DateTime?
+  failedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  refunds Refund[]
+
+  @@index([bookingId])
+  @@index([customerId, createdAt])
+  @@index([hotelId, status, createdAt])
+  @@map("payments")
+}
+
+model Refund {
+  id        String  @id @default(cuid())
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  amountMinor Int
+  currency    String @db.Char(3)
+  reason      String
+  notes       String?
+
+  providerReference String? @unique
+  idempotencyKey    String  @unique
+
+  issuedById String
+  createdAt  DateTime @default(now())
+
+  @@index([paymentId])
+  @@map("refunds")
+}
+
+model OutboxEvent {
+  id           String    @id @default(cuid())
+  topic        String
+  partitionKey String
+  eventType    String
+  payload      Json
+  createdAt    DateTime  @default(now())
+  publishedAt  DateTime?
+  attempts     Int       @default(0)
+  lastError    String?
+
+  @@index([publishedAt, createdAt])
+  @@map("outbox_events")
+}
+
+model ProcessedEvent {
+  eventId       String   @id
+  consumerGroup String
+  processedAt   DateTime @default(now())
+
+  @@map("processed_events")
+}
+
+/// Raw provider webhooks, retained for reconciliation and dispute evidence.
+model WebhookEvent {
+  id                String   @id @default(cuid())
+  provider          PaymentProvider
+  providerEventId   String
+  eventType         String
+  payload           Json
+  signatureVerified Boolean
+  processedAt       DateTime?
+  receivedAt        DateTime @default(now())
+
+  @@unique([provider, providerEventId])
+  @@index([processedAt])
+  @@map("webhook_events")
+}
