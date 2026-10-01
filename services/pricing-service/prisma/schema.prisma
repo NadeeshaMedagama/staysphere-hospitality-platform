@@ -1,0 +1,151 @@
+// StaySphere — Rate plans and promotions.
+// Owned exclusively by pricing-service.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum PromotionType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+model RatePlan {
+  id         String @id @default(cuid())
+  hotelId    String
+  roomTypeId String
+
+  name     String
+  currency String @db.Char(3)
+
+  /// Rack rate per night in minor units.
+  baseRateMinor     Int
+  /// Applied to Friday and Saturday nights.
+  weekendMultiplier Decimal @db.Decimal(4, 2) @default(1.00)
+  /// Tax in basis points; 1250 === 12.5%.
+  taxBasisPoints    Int     @default(0)
+
+  /// Floor and ceiling for dynamic pricing, so an algorithm can never quote an
+  /// absurd rate.
+  minRateMinor Int?
+  maxRateMinor Int?
+
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  published     Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  seasons       SeasonalRate[]
+  stayDiscounts LongStayDiscount[]
+
+  @@unique([hotelId, roomTypeId, effectiveFrom])
+  @@index([hotelId, roomTypeId, published])
+  @@map("rate_plans")
+}
+
+model SeasonalRate {
+  id         String   @id @default(cuid())
+  ratePlanId String
+  ratePlan   RatePlan @relation(fields: [ratePlanId], references: [id], onDelete: Cascade)
+
+  label           String
+  startsOn        DateTime @db.Date
+  endsOn          DateTime @db.Date
+  nightlyRateMinor Int
+
+  @@index([ratePlanId, startsOn, endsOn])
+  @@map("seasonal_rates")
+}
+
+model LongStayDiscount {
+  id         String   @id @default(cuid())
+  ratePlanId String
+  ratePlan   RatePlan @relation(fields: [ratePlanId], references: [id], onDelete: Cascade)
+
+  minNights  Int
+  /// Stored in basis points to avoid float drift; 1000 === 10%.
+  basisPoints Int
+
+  @@unique([ratePlanId, minNights])
+  @@map("long_stay_discounts")
+}
+
+model Promotion {
+  id      String @id @default(cuid())
+  hotelId String?
+
+  /// Case-insensitive; stored uppercase.
+  code        String        @unique
+  name        String
+  description String?
+  type        PromotionType @default(PERCENTAGE)
+
+  /// Basis points for PERCENTAGE, minor units for FIXED_AMOUNT.
+  value    Int
+  currency String? @db.Char(3)
+
+  validFrom DateTime
+  validTo   DateTime
+
+  minNights       Int  @default(1)
+  minSpendMinor   Int  @default(0)
+  /// Empty means the promotion applies to every room type.
+  roomTypeIds     String[] @default([])
+
+  /// Null means unlimited.
+  maxRedemptions      Int?
+  redemptionCount     Int  @default(0)
+  maxPerCustomer      Int  @default(1)
+
+  /// Blocks stacking with automatic long-stay discounts.
+  exclusive Boolean @default(false)
+  active    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  redemptions PromotionRedemption[]
+
+  @@index([code, active])
+  @@index([hotelId, active, validFrom, validTo])
+  @@map("promotions")
+}
+
+model PromotionRedemption {
+  id          String    @id @default(cuid())
+  promotionId String
+  promotion   Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  customerId String
+  bookingId  String
+  amountMinor Int
+  redeemedAt DateTime @default(now())
+
+  @@unique([promotionId, bookingId])
+  @@index([promotionId, customerId])
+  @@map("promotion_redemptions")
+}
+
+model OutboxEvent {
+  id           String    @id @default(cuid())
+  topic        String
+  partitionKey String
+  eventType    String
+  payload      Json
+  createdAt    DateTime  @default(now())
+  publishedAt  DateTime?
+  attempts     Int       @default(0)
+  lastError    String?
+
+  @@index([publishedAt, createdAt])
+  @@map("outbox_events")
+}
