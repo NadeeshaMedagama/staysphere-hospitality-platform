@@ -1,0 +1,1974 @@
+{
+  "info": {
+    "name": "StaySphere API — every endpoint",
+    "description": "Every route the platform serves, grouped by service, with no assertions.\n\nThis is a reference for poking at the API by hand. It is deliberately not a test\nsuite — import `StaySphere.postman_collection.json` for that. Path parameters are\nleft as `:id` for you to fill in.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "audit-service",
+      "item": [
+        {
+          "name": "GET /audit",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/audit",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit"]
+            },
+            "description": "Search the audit trail.\n\n**Access:** PERMISSION: AUDIT_READ\n\n**Service:** audit-service"
+          }
+        },
+        {
+          "name": "POST /audit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/audit",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit"]
+            },
+            "description": "Append an entry. Sensitive values are redacted before they are stored.\n\n**Access:** AUTHENTICATED\n\n**Service:** audit-service"
+          }
+        },
+        {
+          "name": "GET /audit/history/:resource/:resourceId",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/audit/history/:resource/:resourceId",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit", "history", ":resource", ":resourceId"]
+            },
+            "description": "Everything that happened to one record, oldest first.\n\n**Access:** PERMISSION: AUDIT_READ\n\n**Service:** audit-service"
+          }
+        },
+        {
+          "name": "GET /audit/trace/:correlationId",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/audit/trace/:correlationId",
+              "host": ["{{baseUrl}}"],
+              "path": ["audit", "trace", ":correlationId"]
+            },
+            "description": "Every entry from one interaction, across every service — the incident view.\n\n**Access:** PERMISSION: AUDIT_READ\n\n**Service:** audit-service"
+          }
+        }
+      ]
+    },
+    {
+      "name": "auth-service",
+      "item": [
+        {
+          "name": "POST /auth/change-password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/change-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "change-password"]
+            },
+            "description": "Change the password and sign out every other session.\n\n**Access:** AUTHENTICATED\n\n**Service:** auth-service"
+          }
+        },
+        {
+          "name": "POST /auth/login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Exchange credentials for an access/refresh token pair.\n\n**Access:** PUBLIC\n\n**Service:** auth-service"
+          }
+        },
+        {
+          "name": "POST /auth/logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "logout"]
+            },
+            "description": "Revoke the current session and all of its refresh tokens.\n\n**Access:** AUTHENTICATED\n\n**Service:** auth-service"
+          }
+        },
+        {
+          "name": "GET /auth/me",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me"]
+            },
+            "description": "Return the authenticated principal.\n\n**Access:** AUTHENTICATED\n\n**Service:** auth-service"
+          }
+        },
+        {
+          "name": "POST /auth/refresh",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "refresh"]
+            },
+            "description": "Rotate a refresh token for a fresh token pair.\n\n**Access:** PUBLIC\n\n**Service:** auth-service"
+          }
+        },
+        {
+          "name": "POST /auth/register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            },
+            "description": "Create a guest account and open a session.\n\n**Access:** PUBLIC\n\n**Service:** auth-service"
+          }
+        }
+      ]
+    },
+    {
+      "name": "booking-service",
+      "item": [
+        {
+          "name": "POST /bookings",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings"]
+            },
+            "description": "Create a reservation and hold a room.\n\n**Access:** PERMISSION: BOOKING_WRITE\n\n**Idempotency-Key:** supported.\n\n**Service:** booking-service"
+          }
+        },
+        {
+          "name": "GET /bookings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings"]
+            },
+            "description": "List reservations with filtering and pagination.\n\n**Access:** PERMISSION: BOOKING_READ\n\n**Service:** booking-service"
+          }
+        },
+        {
+          "name": "GET /bookings/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", ":id"]
+            },
+            "description": "Fetch one reservation with its nightly breakdown.\n\n**Access:** PERMISSION: BOOKING_READ\n\n**Service:** booking-service"
+          }
+        },
+        {
+          "name": "POST /bookings/:id/cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/:id/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", ":id", "cancel"]
+            },
+            "description": "Cancel a reservation and assess the refund due.\n\n**Access:** PERMISSION: BOOKING_CANCEL\n\n**Service:** booking-service"
+          }
+        },
+        {
+          "name": "GET /bookings/availability",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/availability",
+              "host": ["{{baseUrl}}"],
+              "path": ["bookings", "availability"]
+            },
+            "description": "Check room availability and price a stay.\n\n**Access:** PUBLIC\n\n**Service:** booking-service"
+          }
+        }
+      ]
+    },
+    {
+      "name": "finance-service",
+      "item": [
+        {
+          "name": "POST /invoices",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/invoices",
+              "host": ["{{baseUrl}}"],
+              "path": ["invoices"]
+            },
+            "description": "Issue an invoice for a closed stay.\n\n**Access:** PERMISSION: PAYMENT_READ\n\n**Service:** finance-service"
+          }
+        },
+        {
+          "name": "GET /invoices",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/invoices",
+              "host": ["{{baseUrl}}"],
+              "path": ["invoices"]
+            },
+            "description": "List invoices with filtering and pagination.\n\n**Access:** PERMISSION: PAYMENT_READ\n\n**Service:** finance-service"
+          }
+        },
+        {
+          "name": "GET /invoices/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["invoices", ":id"]
+            },
+            "description": "Fetch an invoice with its lines and tax breakdown.\n\n**Access:** PERMISSION: PAYMENT_READ\n\n**Service:** finance-service"
+          }
+        },
+        {
+          "name": "POST /invoices/:id/payments",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/:id/payments",
+              "host": ["{{baseUrl}}"],
+              "path": ["invoices", ":id", "payments"]
+            },
+            "description": "Record a payment against an invoice.\n\n**Access:** PERMISSION: PAYMENT_READ\n\n**Service:** finance-service"
+          }
+        },
+        {
+          "name": "POST /invoices/:id/void",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/:id/void",
+              "host": ["{{baseUrl}}"],
+              "path": ["invoices", ":id", "void"]
+            },
+            "description": "Void an invoice. The record is retained so the numbering stays gap-free.\n\n**Access:** PERMISSION: PAYMENT_REFUND\n\n**Service:** finance-service"
+          }
+        },
+        {
+          "name": "GET /invoices/revenue",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/invoices/revenue",
+              "host": ["{{baseUrl}}"],
+              "path": ["invoices", "revenue"]
+            },
+            "description": "Revenue and settlement totals for a period.\n\n**Access:** PERMISSION: REPORT_READ\n\n**Service:** finance-service"
+          }
+        }
+      ]
+    },
+    {
+      "name": "hotel-service",
+      "item": [
+        {
+          "name": "GET /hotels",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/hotels",
+              "host": ["{{baseUrl}}"],
+              "path": ["hotels"]
+            },
+            "description": "List published properties.\n\n**Access:** PUBLIC\n\n**Service:** hotel-service"
+          }
+        },
+        {
+          "name": "POST /hotels",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hotels",
+              "host": ["{{baseUrl}}"],
+              "path": ["hotels"]
+            },
+            "description": "Create a property in DRAFT.\n\n**Access:** ROLES: SUPER_ADMIN, HOTEL_ADMIN\n\n**Service:** hotel-service"
+          }
+        },
+        {
+          "name": "GET /hotels/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hotels/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["hotels", ":id"]
+            },
+            "description": "Fetch a property with its branches and images.\n\n**Access:** ROLES: STAFF_ROLES\n\n**Service:** hotel-service"
+          }
+        },
+        {
+          "name": "PATCH /hotels/:id",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hotels/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["hotels", ":id"]
+            },
+            "description": "Update a property. An amenity list replaces the existing set.\n\n**Access:** ROLES: SUPER_ADMIN, HOTEL_ADMIN, MANAGER\n\n**Service:** hotel-service"
+          }
+        },
+        {
+          "name": "POST /hotels/:id/branches",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hotels/:id/branches",
+              "host": ["{{baseUrl}}"],
+              "path": ["hotels", ":id", "branches"]
+            },
+            "description": "Add a branch to a property.\n\n**Access:** ROLES: SUPER_ADMIN, HOTEL_ADMIN\n\n**Service:** hotel-service"
+          }
+        },
+        {
+          "name": "POST /hotels/:id/publish",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hotels/:id/publish",
+              "host": ["{{baseUrl}}"],
+              "path": ["hotels", ":id", "publish"]
+            },
+            "description": "Make a property bookable and announce it to the platform.\n\n**Access:** ROLES: SUPER_ADMIN, HOTEL_ADMIN\n\n**Service:** hotel-service"
+          }
+        },
+        {
+          "name": "GET /hotels/by-slug/:slug",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/hotels/by-slug/:slug",
+              "host": ["{{baseUrl}}"],
+              "path": ["hotels", "by-slug", ":slug"]
+            },
+            "description": "Fetch a published property by its web address.\n\n**Access:** PUBLIC\n\n**Service:** hotel-service"
+          }
+        },
+        {
+          "name": "GET /hotels/manage",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/hotels/manage",
+              "host": ["{{baseUrl}}"],
+              "path": ["hotels", "manage"]
+            },
+            "description": "List every property, including drafts and suspended ones.\n\n**Access:** ROLES: STAFF_ROLES\n\n**Service:** hotel-service"
+          }
+        }
+      ]
+    },
+    {
+      "name": "housekeeping-service",
+      "item": [
+        {
+          "name": "GET /housekeeping/board",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/housekeeping/board",
+              "host": ["{{baseUrl}}"],
+              "path": ["housekeeping", "board"]
+            },
+            "description": "Open work, ordered by urgency then by corridor so a round is walkable.\n\n**Access:** PERMISSION: HOUSEKEEPING_MANAGE\n\n**Service:** housekeeping-service"
+          }
+        },
+        {
+          "name": "GET /housekeeping/my-tasks",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/housekeeping/my-tasks",
+              "host": ["{{baseUrl}}"],
+              "path": ["housekeeping", "my-tasks"]
+            },
+            "description": "The signed-in housekeeper’s own queue.\n\n**Access:** PERMISSION: HOUSEKEEPING_MANAGE\n\n**Service:** housekeeping-service"
+          }
+        },
+        {
+          "name": "POST /housekeeping/shifts",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/housekeeping/shifts",
+              "host": ["{{baseUrl}}"],
+              "path": ["housekeeping", "shifts"]
+            },
+            "description": "Roster a housekeeper onto a shift with a room capacity.\n\n**Access:** PERMISSION: STAFF_MANAGE\n\n**Service:** housekeeping-service"
+          }
+        },
+        {
+          "name": "GET /housekeeping/tasks",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/housekeeping/tasks",
+              "host": ["{{baseUrl}}"],
+              "path": ["housekeeping", "tasks"]
+            },
+            "description": "List cleaning tasks with filtering.\n\n**Access:** PERMISSION: HOUSEKEEPING_MANAGE\n\n**Service:** housekeeping-service"
+          }
+        },
+        {
+          "name": "POST /housekeeping/tasks",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/housekeeping/tasks",
+              "host": ["{{baseUrl}}"],
+              "path": ["housekeeping", "tasks"]
+            },
+            "description": "Queue a cleaning task; priority is computed from the next arrival.\n\n**Access:** PERMISSION: HOUSEKEEPING_MANAGE\n\n**Service:** housekeeping-service"
+          }
+        },
+        {
+          "name": "POST /housekeeping/tasks/:id/assign",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/housekeeping/tasks/:id/assign",
+              "host": ["{{baseUrl}}"],
+              "path": ["housekeeping", "tasks", ":id", "assign"]
+            },
+            "description": "Assign a task, or let the service balance it across the shift.\n\n**Access:** PERMISSION: HOUSEKEEPING_MANAGE\n\n**Service:** housekeeping-service"
+          }
+        },
+        {
+          "name": "POST /housekeeping/tasks/:id/complete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/housekeeping/tasks/:id/complete",
+              "host": ["{{baseUrl}}"],
+              "path": ["housekeeping", "tasks", ":id", "complete"]
+            },
+            "description": "Finish a clean. Every required checklist item must pass.\n\n**Access:** PERMISSION: HOUSEKEEPING_MANAGE\n\n**Service:** housekeeping-service"
+          }
+        },
+        {
+          "name": "POST /housekeeping/tasks/:id/start",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/housekeeping/tasks/:id/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["housekeeping", "tasks", ":id", "start"]
+            },
+            "description": "Start a task assigned to you.\n\n**Access:** PERMISSION: HOUSEKEEPING_MANAGE\n\n**Service:** housekeeping-service"
+          }
+        },
+        {
+          "name": "POST /housekeeping/tasks/:id/verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/housekeeping/tasks/:id/verify",
+              "host": ["{{baseUrl}}"],
+              "path": ["housekeeping", "tasks", ":id", "verify"]
+            },
+            "description": "Record an inspection. A failure reopens the task as rework.\n\n**Access:** PERMISSION: HOUSEKEEPING_MANAGE\n\n**Service:** housekeeping-service"
+          }
+        }
+      ]
+    },
+    {
+      "name": "maintenance-service",
+      "item": [
+        {
+          "name": "GET /maintenance/my-tickets",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/maintenance/my-tickets",
+              "host": ["{{baseUrl}}"],
+              "path": ["maintenance", "my-tickets"]
+            },
+            "description": "The signed-in engineer’s own queue.\n\n**Access:** PERMISSION: MAINTENANCE_MANAGE\n\n**Service:** maintenance-service"
+          }
+        },
+        {
+          "name": "GET /maintenance/summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/maintenance/summary",
+              "host": ["{{baseUrl}}"],
+              "path": ["maintenance", "summary"]
+            },
+            "description": "Open ticket counts by priority, overdue count and rooms offline.\n\n**Access:** PERMISSION: MAINTENANCE_MANAGE\n\n**Service:** maintenance-service"
+          }
+        },
+        {
+          "name": "GET /maintenance/tickets",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/maintenance/tickets",
+              "host": ["{{baseUrl}}"],
+              "path": ["maintenance", "tickets"]
+            },
+            "description": "List tickets, most urgent and closest to breach first.\n\n**Access:** PERMISSION: MAINTENANCE_MANAGE\n\n**Service:** maintenance-service"
+          }
+        },
+        {
+          "name": "POST /maintenance/tickets",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/maintenance/tickets",
+              "host": ["{{baseUrl}}"],
+              "path": ["maintenance", "tickets"]
+            },
+            "description": "Raise a ticket. Priority is triaged from the category and room occupancy.\n\n**Access:** AUTHENTICATED\n\n**Service:** maintenance-service"
+          }
+        },
+        {
+          "name": "GET /maintenance/tickets/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/maintenance/tickets/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["maintenance", "tickets", ":id"]
+            },
+            "description": "Fetch a ticket with its comment trail and SLA state.\n\n**Access:** PERMISSION: MAINTENANCE_MANAGE\n\n**Service:** maintenance-service"
+          }
+        },
+        {
+          "name": "POST /maintenance/tickets/:id/assign",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/maintenance/tickets/:id/assign",
+              "host": ["{{baseUrl}}"],
+              "path": ["maintenance", "tickets", ":id", "assign"]
+            },
+            "description": "Assign a ticket to an engineer.\n\n**Access:** PERMISSION: MAINTENANCE_MANAGE\n\n**Service:** maintenance-service"
+          }
+        },
+        {
+          "name": "POST /maintenance/tickets/:id/close",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/maintenance/tickets/:id/close",
+              "host": ["{{baseUrl}}"],
+              "path": ["maintenance", "tickets", ":id", "close"]
+            },
+            "description": "Close a ticket.\n\n**Access:** PERMISSION: MAINTENANCE_MANAGE\n\n**Service:** maintenance-service"
+          }
+        },
+        {
+          "name": "POST /maintenance/tickets/:id/comments",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/maintenance/tickets/:id/comments",
+              "host": ["{{baseUrl}}"],
+              "path": ["maintenance", "tickets", ":id", "comments"]
+            },
+            "description": "Add a comment to a ticket.\n\n**Access:** PERMISSION: MAINTENANCE_MANAGE\n\n**Service:** maintenance-service"
+          }
+        },
+        {
+          "name": "POST /maintenance/tickets/:id/resolve",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/maintenance/tickets/:id/resolve",
+              "host": ["{{baseUrl}}"],
+              "path": ["maintenance", "tickets", ":id", "resolve"]
+            },
+            "description": "Resolve a ticket and, where applicable, return the room to sale.\n\n**Access:** PERMISSION: MAINTENANCE_MANAGE\n\n**Service:** maintenance-service"
+          }
+        },
+        {
+          "name": "POST /maintenance/tickets/:id/start",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/maintenance/tickets/:id/start",
+              "host": ["{{baseUrl}}"],
+              "path": ["maintenance", "tickets", ":id", "start"]
+            },
+            "description": "Start work on a ticket assigned to you.\n\n**Access:** PERMISSION: MAINTENANCE_MANAGE\n\n**Service:** maintenance-service"
+          }
+        }
+      ]
+    },
+    {
+      "name": "notification-service",
+      "item": [
+        {
+          "name": "GET /notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications"]
+            },
+            "description": "The signed-in user’s notification centre.\n\n**Access:** AUTHENTICATED\n\n**Service:** notification-service"
+          }
+        },
+        {
+          "name": "POST /notifications/:id/read",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/:id/read",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", ":id", "read"]
+            },
+            "description": "Mark one notification as read.\n\n**Access:** AUTHENTICATED\n\n**Service:** notification-service"
+          }
+        },
+        {
+          "name": "PUT /notifications/preferences",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/preferences",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "preferences"]
+            },
+            "description": "Opt in or out of an optional message on a channel.\n\n**Access:** AUTHENTICATED\n\n**Service:** notification-service"
+          }
+        },
+        {
+          "name": "POST /notifications/read-all",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/read-all",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "read-all"]
+            },
+            "description": "Mark every in-app notification as read.\n\n**Access:** AUTHENTICATED\n\n**Service:** notification-service"
+          }
+        },
+        {
+          "name": "POST /notifications/send",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/send",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "send"]
+            },
+            "description": "Queue a message. Normally driven by domain events, not called directly.\n\n**Access:** PERMISSION: SYSTEM_ADMIN\n\n**Service:** notification-service"
+          }
+        },
+        {
+          "name": "PUT /notifications/templates",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/notifications/templates",
+              "host": ["{{baseUrl}}"],
+              "path": ["notifications", "templates"]
+            },
+            "description": "Create or update a message template.\n\n**Access:** ROLES: SUPER_ADMIN, HOTEL_ADMIN\n\n**Service:** notification-service"
+          }
+        }
+      ]
+    },
+    {
+      "name": "payment-service",
+      "item": [
+        {
+          "name": "POST /payments",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/payments",
+              "host": ["{{baseUrl}}"],
+              "path": ["payments"]
+            },
+            "description": "Take a payment, or place a hold to capture at check-in.\n\n**Access:** PERMISSION: BOOKING_WRITE\n\n**Idempotency-Key:** supported.\n\n**Service:** payment-service"
+          }
+        },
+        {
+          "name": "GET /payments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/payments",
+              "host": ["{{baseUrl}}"],
+              "path": ["payments"]
+            },
+            "description": "List payments with filtering and pagination.\n\n**Access:** PERMISSION: PAYMENT_READ\n\n**Service:** payment-service"
+          }
+        },
+        {
+          "name": "GET /payments/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/payments/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["payments", ":id"]
+            },
+            "description": "Fetch a payment with its refunds and remaining refundable amount.\n\n**Access:** PERMISSION: PAYMENT_READ\n\n**Service:** payment-service"
+          }
+        },
+        {
+          "name": "POST /payments/:id/capture",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/payments/:id/capture",
+              "host": ["{{baseUrl}}"],
+              "path": ["payments", ":id", "capture"]
+            },
+            "description": "Settle a previously authorised hold.\n\n**Access:** PERMISSION: PAYMENT_READ\n\n**Service:** payment-service"
+          }
+        },
+        {
+          "name": "POST /payments/:id/refund",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/payments/:id/refund",
+              "host": ["{{baseUrl}}"],
+              "path": ["payments", ":id", "refund"]
+            },
+            "description": "Return money to the guest, in full or in part.\n\n**Access:** PERMISSION: PAYMENT_REFUND\n\n**Idempotency-Key:** supported.\n\n**Service:** payment-service"
+          }
+        }
+      ]
+    },
+    {
+      "name": "pricing-service",
+      "item": [
+        {
+          "name": "POST /rates/plans",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rates/plans",
+              "host": ["{{baseUrl}}"],
+              "path": ["rates", "plans"]
+            },
+            "description": "Create a rate plan with its seasons and long-stay tiers.\n\n**Access:** PERMISSION: RATE_WRITE\n\n**Service:** pricing-service"
+          }
+        },
+        {
+          "name": "GET /rates/plans/:hotelId/:roomTypeId",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rates/plans/:hotelId/:roomTypeId",
+              "host": ["{{baseUrl}}"],
+              "path": ["rates", "plans", ":hotelId", ":roomTypeId"]
+            },
+            "description": "The rate plan currently in force for a room type.\n\n**Access:** ROLES: STAFF_ROLES\n\n**Service:** pricing-service"
+          }
+        },
+        {
+          "name": "POST /rates/plans/:id/publish",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rates/plans/:id/publish",
+              "host": ["{{baseUrl}}"],
+              "path": ["rates", "plans", ":id", "publish"]
+            },
+            "description": "Publish a rate plan and announce it to booking.\n\n**Access:** PERMISSION: RATE_WRITE\n\n**Service:** pricing-service"
+          }
+        },
+        {
+          "name": "POST /rates/promotions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rates/promotions",
+              "host": ["{{baseUrl}}"],
+              "path": ["rates", "promotions"]
+            },
+            "description": "Create a promotion code.\n\n**Access:** PERMISSION: RATE_WRITE\n\n**Service:** pricing-service"
+          }
+        },
+        {
+          "name": "POST /rates/promotions/validate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rates/promotions/validate",
+              "host": ["{{baseUrl}}"],
+              "path": ["rates", "promotions", "validate"]
+            },
+            "description": "Check a promotion code against a booking without consuming it.\n\n**Access:** AUTHENTICATED\n\n**Service:** pricing-service"
+          }
+        },
+        {
+          "name": "GET /rates/quote",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rates/quote",
+              "host": ["{{baseUrl}}"],
+              "path": ["rates", "quote"]
+            },
+            "description": "A demand-adjusted nightly rate for a room type.\n\n**Access:** PUBLIC\n\n**Service:** pricing-service"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reporting-service",
+      "item": [
+        {
+          "name": "GET /reports/channels",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reports/channels",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "channels"]
+            },
+            "description": "Booking mix by channel, with revenue share and lead time.\n\n**Access:** PERMISSION: REPORT_READ\n\n**Service:** reporting-service"
+          }
+        },
+        {
+          "name": "POST /reports/daily",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reports/daily",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "daily"]
+            },
+            "description": "Record or replay a night’s performance. Normally driven by event projection.\n\n**Access:** PERMISSION: SYSTEM_ADMIN\n\n**Service:** reporting-service"
+          }
+        },
+        {
+          "name": "GET /reports/housekeeping",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reports/housekeeping",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "housekeeping"]
+            },
+            "description": "Housekeeping throughput and rework rate per person.\n\n**Access:** PERMISSION: REPORT_READ\n\n**Service:** reporting-service"
+          }
+        },
+        {
+          "name": "GET /reports/performance",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reports/performance",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "performance"]
+            },
+            "description": "Occupancy, ADR, RevPAR and TRevPAR, optionally against the preceding period.\n\n**Access:** PERMISSION: REPORT_READ\n\n**Service:** reporting-service"
+          }
+        },
+        {
+          "name": "GET /reports/today",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reports/today",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "today"]
+            },
+            "description": "Today’s operational snapshot for the overview cards.\n\n**Access:** PERMISSION: REPORT_READ\n\n**Service:** reporting-service"
+          }
+        },
+        {
+          "name": "GET /reports/trend",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reports/trend",
+              "host": ["{{baseUrl}}"],
+              "path": ["reports", "trend"]
+            },
+            "description": "A KPI time series for the dashboard charts.\n\n**Access:** PERMISSION: REPORT_READ\n\n**Service:** reporting-service"
+          }
+        }
+      ]
+    },
+    {
+      "name": "review-service",
+      "item": [
+        {
+          "name": "GET /reviews",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reviews",
+              "host": ["{{baseUrl}}"],
+              "path": ["reviews"]
+            },
+            "description": "Published reviews for a property.\n\n**Access:** PUBLIC\n\n**Service:** review-service"
+          }
+        },
+        {
+          "name": "POST /reviews",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reviews",
+              "host": ["{{baseUrl}}"],
+              "path": ["reviews"]
+            },
+            "description": "Review a completed stay. One review per stay.\n\n**Access:** AUTHENTICATED\n\n**Service:** review-service"
+          }
+        },
+        {
+          "name": "POST /reviews/:id/moderate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reviews/:id/moderate",
+              "host": ["{{baseUrl}}"],
+              "path": ["reviews", ":id", "moderate"]
+            },
+            "description": "Publish, reject or hide a review.\n\n**Access:** ROLES: SUPER_ADMIN, HOTEL_ADMIN, MANAGER\n\n**Service:** review-service"
+          }
+        },
+        {
+          "name": "POST /reviews/:id/response",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reviews/:id/response",
+              "host": ["{{baseUrl}}"],
+              "path": ["reviews", ":id", "response"]
+            },
+            "description": "Publish the property’s reply to a review.\n\n**Access:** ROLES: SUPER_ADMIN, HOTEL_ADMIN, MANAGER\n\n**Service:** review-service"
+          }
+        },
+        {
+          "name": "GET /reviews/mine",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reviews/mine",
+              "host": ["{{baseUrl}}"],
+              "path": ["reviews", "mine"]
+            },
+            "description": "The signed-in guest’s own reviews, whatever their status.\n\n**Access:** AUTHENTICATED\n\n**Service:** review-service"
+          }
+        },
+        {
+          "name": "GET /reviews/moderation-queue",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reviews/moderation-queue",
+              "host": ["{{baseUrl}}"],
+              "path": ["reviews", "moderation-queue"]
+            },
+            "description": "Reviews held for a moderator.\n\n**Access:** ROLES: SUPER_ADMIN, HOTEL_ADMIN, MANAGER\n\n**Service:** review-service"
+          }
+        },
+        {
+          "name": "GET /reviews/rating",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reviews/rating",
+              "host": ["{{baseUrl}}"],
+              "path": ["reviews", "rating"]
+            },
+            "description": "A property’s aggregate rating and star distribution.\n\n**Access:** PUBLIC\n\n**Service:** review-service"
+          }
+        }
+      ]
+    },
+    {
+      "name": "room-service",
+      "item": [
+        {
+          "name": "GET /rooms",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms",
+              "host": ["{{baseUrl}}"],
+              "path": ["rooms"]
+            },
+            "description": "List rooms, filtered by floor, type or status.\n\n**Access:** ROLES: STAFF_ROLES\n\n**Service:** room-service"
+          }
+        },
+        {
+          "name": "POST /rooms",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms",
+              "host": ["{{baseUrl}}"],
+              "path": ["rooms"]
+            },
+            "description": "Create a single room.\n\n**Access:** PERMISSION: ROOM_WRITE\n\n**Service:** room-service"
+          }
+        },
+        {
+          "name": "GET /rooms/:id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/:id",
+              "host": ["{{baseUrl}}"],
+              "path": ["rooms", ":id"]
+            },
+            "description": "Fetch a room with its recent status history.\n\n**Access:** ROLES: STAFF_ROLES\n\n**Service:** room-service"
+          }
+        },
+        {
+          "name": "POST /rooms/:id/block",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/:id/block",
+              "host": ["{{baseUrl}}"],
+              "path": ["rooms", ":id", "block"]
+            },
+            "description": "Withhold a room from sale.\n\n**Access:** PERMISSION: ROOM_WRITE\n\n**Service:** room-service"
+          }
+        },
+        {
+          "name": "DELETE /rooms/:id/block",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/:id/block",
+              "host": ["{{baseUrl}}"],
+              "path": ["rooms", ":id", "block"]
+            },
+            "description": "Return a withheld room to sale.\n\n**Access:** PERMISSION: ROOM_WRITE\n\n**Service:** room-service"
+          }
+        },
+        {
+          "name": "POST /rooms/:id/status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/:id/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["rooms", ":id", "status"]
+            },
+            "description": "Change a room’s operational status.\n\n**Access:** PERMISSION: ROOM_WRITE\n\n**Service:** room-service"
+          }
+        },
+        {
+          "name": "GET /rooms/board",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/board",
+              "host": ["{{baseUrl}}"],
+              "path": ["rooms", "board"]
+            },
+            "description": "The live floor board, grouped by floor.\n\n**Access:** ROLES: STAFF_ROLES\n\n**Service:** room-service"
+          }
+        },
+        {
+          "name": "POST /rooms/generate-floor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/generate-floor",
+              "host": ["{{baseUrl}}"],
+              "path": ["rooms", "generate-floor"]
+            },
+            "description": "Create an entire floor of rooms in one transaction.\n\n**Access:** PERMISSION: ROOM_WRITE\n\n**Service:** room-service"
+          }
+        },
+        {
+          "name": "GET /rooms/types",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/types",
+              "host": ["{{baseUrl}}"],
+              "path": ["rooms", "types"]
+            },
+            "description": "List the room types offered at a property.\n\n**Access:** PUBLIC\n\n**Service:** room-service"
+          }
+        },
+        {
+          "name": "POST /rooms/types",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rooms/types",
+              "host": ["{{baseUrl}}"],
+              "path": ["rooms", "types"]
+            },
+            "description": "Define a room type.\n\n**Access:** PERMISSION: ROOM_WRITE\n\n**Service:** room-service"
+          }
+        }
+      ]
+    },
+    {
+      "name": "stay-service",
+      "item": [
+        {
+          "name": "GET /stays",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stays",
+              "host": ["{{baseUrl}}"],
+              "path": ["stays"]
+            },
+            "description": "List stays with filtering and pagination.\n\n**Access:** PERMISSION: BOOKING_READ\n\n**Service:** stay-service"
+          }
+        },
+        {
+          "name": "POST /stays/:id/charges",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stays/:id/charges",
+              "host": ["{{baseUrl}}"],
+              "path": ["stays", ":id", "charges"]
+            },
+            "description": "Post a manual charge, discount or correction. The folio is append-only.\n\n**Access:** PERMISSION: BOOKING_WRITE\n\n**Service:** stay-service"
+          }
+        },
+        {
+          "name": "POST /stays/:id/check-out",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stays/:id/check-out",
+              "host": ["{{baseUrl}}"],
+              "path": ["stays", ":id", "check-out"]
+            },
+            "description": "Close a stay, settle the folio and release the room.\n\n**Access:** PERMISSION: BOOKING_WRITE\n\n**Service:** stay-service"
+          }
+        },
+        {
+          "name": "GET /stays/:id/folio",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stays/:id/folio",
+              "host": ["{{baseUrl}}"],
+              "path": ["stays", ":id", "folio"]
+            },
+            "description": "The itemised bill and its running balance.\n\n**Access:** PERMISSION: BOOKING_READ\n\n**Service:** stay-service"
+          }
+        },
+        {
+          "name": "POST /stays/:id/services",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stays/:id/services",
+              "host": ["{{baseUrl}}"],
+              "path": ["stays", ":id", "services"]
+            },
+            "description": "Request an extra and post it to the folio.\n\n**Access:** PERMISSION: BOOKING_WRITE\n\n**Service:** stay-service"
+          }
+        },
+        {
+          "name": "POST /stays/check-in",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stays/check-in",
+              "host": ["{{baseUrl}}"],
+              "path": ["stays", "check-in"]
+            },
+            "description": "Check a guest in and open their folio.\n\n**Access:** PERMISSION: BOOKING_WRITE\n\n**Service:** stay-service"
+          }
+        },
+        {
+          "name": "GET /stays/in-house",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stays/in-house",
+              "host": ["{{baseUrl}}"],
+              "path": ["stays", "in-house"]
+            },
+            "description": "Everyone currently in the building.\n\n**Access:** PERMISSION: BOOKING_READ\n\n**Service:** stay-service"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "adminToken",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
