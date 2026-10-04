@@ -72,8 +72,8 @@ importers:
         specifier: ^19.0.0
         version: 19.2.8(react@19.2.8)
       tailwind-merge:
-        specifier: ^2.6.0
-        version: 2.6.1
+        specifier: ^3.7.0
+        version: 3.7.0
     devDependencies:
       '@staysphere/eslint-config':
         specifier: workspace:*
@@ -130,8 +130,8 @@ importers:
         specifier: ^19.0.0
         version: 19.2.8(react@19.2.8)
       tailwind-merge:
-        specifier: ^2.6.0
-        version: 2.6.1
+        specifier: ^3.7.0
+        version: 3.7.0
     devDependencies:
       '@staysphere/eslint-config':
         specifier: workspace:*
@@ -185,8 +185,8 @@ importers:
         specifier: ^19.0.0
         version: 19.2.8(react@19.2.8)
       tailwind-merge:
-        specifier: ^2.6.0
-        version: 2.6.1
+        specifier: ^3.7.0
+        version: 3.7.0
     devDependencies:
       '@staysphere/eslint-config':
         specifier: workspace:*
@@ -407,8 +407,8 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       tailwind-merge:
-        specifier: ^2.6.0
-        version: 2.6.1
+        specifier: ^3.7.0
+        version: 3.7.0
     devDependencies:
       '@staysphere/eslint-config':
         specifier: workspace:*
@@ -6796,8 +6796,8 @@ packages:
   pino-std-serializers@7.1.0:
     resolution: {integrity: sha512-BndPH67/JxGExRgiX1dX0w1FvZck5Wa4aal9198SrRhZjH3GxKQUKIBnYJTdj2HDN3UQAS06HlfcSbQj2OHmaw==}
 
-  pino@10.3.1:
-    resolution: {integrity: sha512-r34yH/GlQpKZbU1BvFFqOjhISRo1MNx1tWYsYvmj6KIRHSPMT2+yHOEb1SG6NMvRoHRF0a07kCOox/9yakl1vg==}
+  pino@10.4.0:
+    resolution: {integrity: sha512-bk1ZMTwG/Vymx+zPoa28MhNzucFvXJWp3csrSuxuHPSMeUettaCoQ5Jvg07mtC4JGNpcfTwz41oVCnNgBK9+vA==}
     hasBin: true
 
   pino@9.14.0:
@@ -7518,8 +7518,8 @@ packages:
     resolution: {integrity: sha512-b19dMThMV4HVFynSAM1++gBHAbk2Tc/osgLIBZMKsyqh34jb2e8Os7T6ZW/Bt3pJFdBTd2JwAnAAEQV7rSNvcQ==}
     engines: {node: '>=0.10'}
 
-  tailwind-merge@2.6.1:
-    resolution: {integrity: sha512-Oo6tHdpZsGpkKG88HJ8RR1rg/RdnEkQEfMoEk2x1XRI3F1AxeU+ijRXpiVUF4UbLfcxxRGw6TbUINKYdWVsQTQ==}
+  tailwind-merge@3.7.0:
+    resolution: {integrity: sha512-XPPUyAc+cvspz3lHTcR/QgPfW2A0lv/xQNIjX3HGhLR+Nq2lHaLq5MtTesHn8GUr3W3DguT2KT5x3NVgRtYwmA==}
 
   tailwindcss@4.3.3:
     resolution: {integrity: sha512-gOhV3P7ufE62QDGg1zVaTgCR+EtPv92k2nIhVcVKcLmxT1sUBsQGhnZj175j+MqRt4zLF7ic+sCYjfhxMxj7YQ==}
@@ -12969,7 +12969,7 @@ snapshots:
   pino-http@11.0.0:
     dependencies:
       get-caller-file: 2.0.5
-      pino: 10.3.1
+      pino: 10.4.0
       pino-std-serializers: 7.1.0
       process-warning: 5.1.0
 
@@ -12991,7 +12991,7 @@ snapshots:
 
   pino-std-serializers@7.1.0: {}
 
-  pino@10.3.1:
+  pino@10.4.0:
     dependencies:
       '@pinojs/redact': 0.4.0
       atomic-sleep: 1.0.0
@@ -13000,7 +13000,7 @@ snapshots:
       pino-std-serializers: 7.1.0
       process-warning: 5.1.0
       quick-format-unescaped: 4.0.4
-      real-require: 0.2.0
+      real-require: 1.0.0
       safe-stable-stringify: 2.5.0
       sonic-boom: 4.2.1
       thread-stream: 4.2.0
@@ -13858,7 +13858,7 @@ snapshots:
 
   symbol-observable@4.0.0: {}
 
-  tailwind-merge@2.6.1: {}
+  tailwind-merge@3.7.0: {}
 
   tailwindcss@4.3.3: {}
 
