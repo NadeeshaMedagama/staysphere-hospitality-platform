@@ -1,0 +1,74 @@
+/*
+ * StaySphere design tokens.
+ *
+ * Imported once per application, before Tailwind's utilities. Every surface —
+ * guest site, operations console, staff app — resolves the same names, so a
+ * change to `--color-brand-600` moves all three together.
+ */
+
+@theme {
+  /* ---- Neutrals -------------------------------------------------------- */
+  --color-canvas: #fafbfc;
+  --color-surface: #ffffff;
+  --color-line: #e3e7eb;
+  --color-line-strong: #cdd4db;
+
+  --color-ink-400: #8b949e;
+  --color-ink-500: #6b7480;
+  --color-ink-700: #39414c;
+  --color-ink-900: #171b21;
+
+  /* ---- Brand ----------------------------------------------------------- */
+  --color-brand-50: #eef5f4;
+  --color-brand-100: #d3e6e3;
+  --color-brand-400: #4a8f86;
+  --color-brand-500: #35756d;
+  --color-brand-600: #285c56;
+  --color-brand-700: #1e4642;
+
+  --color-accent-400: #c9a227;
+  --color-accent-500: #ad8a1c;
+
+  /* ---- Semantic -------------------------------------------------------- */
+  --color-positive: #2f7d51;
+  --color-positive-soft: #eaf4ee;
+  --color-caution: #b8791a;
+  --color-caution-soft: #fbf3e6;
+  --color-negative: #c2410c;
+  --color-negative-soft: #fdeee7;
+  --color-info: #2563a8;
+  --color-info-soft: #eaf1f9;
+
+  /* ---- Room status ------------------------------------------------------
+     Colour never carries the meaning alone; every surface also prints the
+     status word, so the board stays readable for colour-blind staff and on a
+     washed-out front-desk monitor. */
+  --color-status-available: #2f7d51;
+  --color-status-occupied: #2563a8;
+  --color-status-reserved: #7c5cc4;
+  --color-status-cleaning: #b8791a;
+  --color-status-maintenance: #c2410c;
+  --color-status-offline: #6b7480;
+
+  /* ---- Shape ----------------------------------------------------------- */
+  --radius-control: 0.5rem;
+  --radius-card: 0.75rem;
+
+  --font-display: 'Georgia', 'Times New Roman', serif;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink-900);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Visible focus for keyboard users, suppressed for pointer interaction. */
+:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+}
