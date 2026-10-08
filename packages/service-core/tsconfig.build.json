@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Distinct from tsconfig.json's buildinfo: this config compiles a
+    // different file set (no specs), and two file sets sharing one
+    // incremental state file make each run invalidate the other's.
+    "tsBuildInfoFile": "./dist/.tsbuildinfo-build"
+  },
+  "exclude": ["node_modules", "dist", "**/*.spec.ts", "**/*.test.ts"]
+}
