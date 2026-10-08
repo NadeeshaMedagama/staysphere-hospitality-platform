@@ -1,0 +1,14 @@
+{
+  "extends": "@staysphere/typescript-config/base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "types": ["node"],
+    // Playwright's `page.evaluate` bodies are compiled here but run inside the
+    // browser, so assertions about `document` and `window` need the DOM types
+    // even though nothing in this package executes in a browser itself.
+    "lib": ["ES2023", "DOM"]
+  },
+  "include": ["tests/**/*.ts", "playwright.config.ts"]
+}
