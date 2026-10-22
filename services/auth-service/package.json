@@ -27,7 +27,7 @@
     "@nestjs/jwt": "^10.2.0",
     "@nestjs/platform-express": "^10.4.15",
     "@nestjs/swagger": "^8.1.0",
-    "@nestjs/throttler": "^6.3.0",
+    "@nestjs/throttler": "^6.7.1",
     "@node-rs/argon2": "^2.0.2",
     "@prisma/client": "^6.2.1",
     "@staysphere/contracts": "workspace:*",
@@ -46,7 +46,7 @@
   "devDependencies": {
     "@nestjs/cli": "^10.4.9",
     "@nestjs/schematics": "^10.2.3",
-    "@nestjs/testing": "^12.1.0",
+    "@nestjs/testing": "^12.2.0",
     "@staysphere/eslint-config": "workspace:*",
     "@staysphere/typescript-config": "workspace:*",
     "@types/express": "^5.0.0",
