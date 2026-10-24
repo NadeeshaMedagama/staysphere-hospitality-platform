@@ -1,8 +1,6 @@
 name: StaySphere Service Deploy
 description: >-
-  Build, publish and roll out a containerised microservice in one step: multi-arch
-  image build, push to any OCI registry, deployment trigger, and a health gate
-  that fails the job if the new revision never becomes healthy.
+  A hotel operations and reservation platform
 author: NadeeshaMedagama
 
 branding:
