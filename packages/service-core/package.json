@@ -52,7 +52,7 @@
     "@staysphere/eslint-config": "workspace:*",
     "@staysphere/typescript-config": "workspace:*",
     "@types/jest": "^29.5.14",
-    "@types/node": "^22.10.5",
+    "@types/node": "^22.20.5",
     "eslint": "^9.17.0",
     "jest": "^29.7.0",
     "kafkajs": "^2.2.4",
