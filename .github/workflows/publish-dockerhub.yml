@@ -206,7 +206,7 @@ jobs:
           done
 
       - name: Attest the build
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}
           subject-digest: ${{ steps.build.outputs.digest }}
