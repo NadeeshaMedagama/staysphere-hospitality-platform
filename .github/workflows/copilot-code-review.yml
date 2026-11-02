@@ -122,7 +122,7 @@ jobs:
           subjectPatternError: |
             The subject "{subject}" must start lowercase and must not end with a period.
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Size label
         env:
