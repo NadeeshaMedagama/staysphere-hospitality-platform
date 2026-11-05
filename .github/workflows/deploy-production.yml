@@ -60,7 +60,7 @@ jobs:
       deploy-services: ${{ steps.resolve.outputs.services }}
       services: ${{ steps.resolve.outputs.service-list }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.event.release.tag_name }}
 
@@ -132,7 +132,7 @@ jobs:
     environment:
       name: production-database
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.preflight.outputs.ref }}
 
@@ -194,7 +194,7 @@ jobs:
           - app: staff
             project-secret: VERCEL_PROJECT_ID_STAFF
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.preflight.outputs.ref }}
 
@@ -280,7 +280,7 @@ jobs:
       matrix:
         service: ${{ fromJson(needs.preflight.outputs.services) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.preflight.outputs.ref }}
 
@@ -323,7 +323,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.preflight.outputs.ref }}
 

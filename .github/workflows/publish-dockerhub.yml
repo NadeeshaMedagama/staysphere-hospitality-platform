@@ -56,7 +56,7 @@ jobs:
       dockerhub-enabled: ${{ steps.credentials.outputs.dockerhub }}
       platforms: ${{ steps.discover.outputs.platforms }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Discover services
         id: discover
@@ -107,7 +107,7 @@ jobs:
       digest: ${{ steps.build.outputs.digest }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # QEMU provides the arm64 emulation the cross-build needs.
       - uses: docker/setup-qemu-action@v4
@@ -242,7 +242,7 @@ jobs:
       matrix:
         service: ${{ fromJson(needs.preflight.outputs.services) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build the repository description
         run: |
