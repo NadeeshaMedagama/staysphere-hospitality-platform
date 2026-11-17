@@ -227,7 +227,7 @@ jobs:
       # Build only — nothing is pushed from a pull request. This proves the
       # image still builds without granting CI push credentials on untrusted code.
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: infrastructure/docker/Dockerfile.service
